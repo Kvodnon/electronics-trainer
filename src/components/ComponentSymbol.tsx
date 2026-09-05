@@ -14,27 +14,26 @@ interface SymbolEntry {
   readonly ansi: ReactNode;
 }
 
-/** Общие выводы-полубесконечности слева и справа от символа. */
-const leadLeft = <path d="M4 24 H38" />;
-const leadRight = <path d="M102 24 H136" />;
-const leadLeftWide = <path d="M4 24 H58" />;
-const leadRightWide = <path d="M88 24 H136" />;
+/** Вывод слева от символа — до координаты x. */
+const выводСлева = (до: number) => <path d={`M4 24 H${до}`} />;
+/** Вывод справа от символа — от координаты x. */
+const выводСправа = (от: number) => <path d={`M${от} 24 H136`} />;
 
 const registry: Record<ComponentSymbolId, SymbolEntry> = {
   resistor: {
     name: 'Резистор',
     gost: (
       <>
-        {leadLeft}
+        {выводСлева(38)}
         <rect x="38" y="16" width="64" height="16" />
-        {leadRight}
+        {выводСправа(102)}
       </>
     ),
     ansi: (
       <>
-        {leadLeft}
+        {выводСлева(38)}
         <path d="M38 24 L46 10 L62 38 L78 10 L94 38 L102 24" />
-        {leadRight}
+        {выводСправа(102)}
       </>
     ),
   },
@@ -42,18 +41,18 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
     name: 'Источник постоянного напряжения',
     gost: (
       <>
-        {leadLeftWide}
+        {выводСлева(58)}
         {/* батарея из двух гальванических элементов: длинная пластина — «плюс» */}
         <path d="M58 6 V42 M68 15 V33 M78 6 V42 M88 15 V33" />
         <text x="50" y="11" className="symbol-sign" stroke="none">
           +
         </text>
-        {leadRightWide}
+        {выводСправа(88)}
       </>
     ),
     ansi: (
       <>
-        <path d="M4 24 H54" />
+        {выводСлева(54)}
         <circle cx="70" cy="24" r="16" />
         <text x="63" y="29" className="symbol-sign" stroke="none">
           +
@@ -61,7 +60,7 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
         <text x="74" y="29" className="symbol-sign" stroke="none">
           −
         </text>
-        <path d="M86 24 H136" />
+        {выводСправа(86)}
       </>
     ),
   },
@@ -69,18 +68,18 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
     name: 'Конденсатор',
     gost: (
       <>
-        <path d="M4 24 H64" />
+        {выводСлева(64)}
         <path d="M64 8 V40 M76 8 V40" />
-        <path d="M76 24 H136" />
+        {выводСправа(76)}
       </>
     ),
     ansi: (
       <>
-        <path d="M4 24 H64" />
+        {выводСлева(64)}
         <path d="M64 8 V40" />
         {/* вторая пластина — дугой, вершиной к выводу */}
         <path d="M76 8 Q88 24 76 40" />
-        <path d="M82 24 H136" />
+        {выводСправа(82)}
       </>
     ),
   },

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { ComponentSymbol } from './ComponentSymbol';
+import { ModuleProgressLine, taskStateName } from './ModuleProgressLine';
 import { NumericQuestionScreen } from './NumericQuestionScreen';
 import { QuestionScreen } from './QuestionScreen';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
-import { moduleProgressOf, moduleTaskQueue } from '../domain/course';
+import { moduleProgressOf, moduleTaskQueue, taskStateOf } from '../domain/course';
 import type { Answer } from '../domain/evaluate';
 import type { CourseAction, CourseModule, CourseProgress, TheoryCard } from '../domain/course';
 
@@ -34,14 +35,14 @@ export function ModuleScreen({
 
   const итог = moduleProgressOf(module, progress);
   const очередь = moduleTaskQueue(module, progress);
-  const задача = очередь[0];
-  const evaluation = задача && answer ? evaluate(задача, answer) : null;
+  const задание = очередь[0];
+  const evaluation = задание && answer ? evaluate(задание, answer) : null;
 
   function идёмДальше() {
-    if (!задача) return;
+    if (!задание) return;
     onProgressAction({
       type: evaluation?.outcome === 'correct' ? 'task-passed' : 'task-returned-for-retry',
-      taskId: задача.id,
+      taskId: задание.id,
     });
     setAnswer(null);
     setStep((номер) => номер + 1);
@@ -54,12 +55,21 @@ export function ModuleScreen({
           ← К Модулям
         </button>
         <h2 className="module-header-title">{module.title}</h2>
-        <p className="module-progress">
-          Заданий пройдено: {итог.passed} из {итог.total}
-          {итог.returnedForRetry > 0 && (
-            <span className="module-progress-retry"> · на повторении: {итог.returnedForRetry}</span>
-          )}
-        </p>
+        <div className="module-header-state">
+          <ModuleProgressLine progress={итог} />
+          <ul className="task-progress" aria-label="Состояние Заданий Модуля">
+            {module.tasks.map((заданиеМодуля, index) => {
+              const state = taskStateOf(progress, заданиеМодуля.id);
+              return (
+                <li
+                  key={заданиеМодуля.id}
+                  className={`task-dot task-dot-${state}`}
+                  title={`Задание ${index + 1} — ${taskStateName(state)}`}
+                />
+              );
+            })}
+          </ul>
+        </div>
       </header>
 
       {phase === 'theory' ? (
@@ -69,19 +79,19 @@ export function ModuleScreen({
           onFinish={() => setPhase('tasks')}
           onNextCard={() => setCardIndex((index) => index + 1)}
         />
-      ) : задача ? (
-        задача.kind === 'choice-question' ? (
+      ) : задание ? (
+        задание.kind === 'choice-question' ? (
           <QuestionScreen
-            key={`${задача.id}:${step}`}
-            question={задача}
+            key={`${задание.id}:${step}`}
+            question={задание}
             evaluation={evaluationOfKind(evaluation, 'choice-question')}
             onAnswer={(choiceId) => setAnswer({ kind: 'choice-answer', chosenChoiceId: choiceId })}
             onNext={идёмДальше}
           />
         ) : (
           <NumericQuestionScreen
-            key={`${задача.id}:${step}`}
-            question={задача}
+            key={`${задание.id}:${step}`}
+            question={задание}
             evaluation={evaluationOfKind(evaluation, 'numeric-question')}
             onAnswer={setAnswer}
             onNext={идёмДальше}

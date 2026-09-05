@@ -1,5 +1,6 @@
-import { isModuleLocked, moduleProgressOf } from '../domain/course';
+import { blockingModuleOf, moduleProgressOf } from '../domain/course';
 import type { CourseData, CourseProgress } from '../domain/course';
+import { ModuleProgressLine } from './ModuleProgressLine';
 
 interface CourseScreenProps {
   course: CourseData;
@@ -22,23 +23,20 @@ export function CourseScreen({ course, progress, onEnterModule }: CourseScreenPr
       <ul className="module-list">
         {course.modules.map((module, index) => {
           const итог = moduleProgressOf(module, progress);
-          const locked = isModuleLocked(course, progress, module.id);
-          const первыйНепройденный =
-                course.modules
-                  .slice(0, index)
-                  .find((предыдущий) => !moduleProgressOf(предыдущий, progress).completed);
-          const actionLabel = locked
-            ? 'Заблокирован'
-            : итог.completed
-              ? 'Повторить'
-              : итог.passed > 0 || итог.returnedForRetry > 0
-                ? 'Продолжить'
-                : 'Начать';
+          const блокирующий = blockingModuleOf(course, progress, module.id);
+          const actionLabel =
+            блокирующий !== null
+              ? 'Заблокирован'
+              : итог.completed
+                ? 'Повторить'
+                : итог.passed > 0 || итог.returnedForRetry > 0
+                  ? 'Продолжить'
+                  : 'Начать';
 
           return (
             <li
               key={module.id}
-              className={`module-card ${locked ? 'module-card-locked' : ''}`}
+              className={`module-card ${блокирующий !== null ? 'module-card-locked' : ''}`}
             >
               <div className="module-head">
                 <p className="module-index">Модуль {index + 1}</p>
@@ -46,24 +44,14 @@ export function CourseScreen({ course, progress, onEnterModule }: CourseScreenPr
                 {итог.completed && <span className="chip chip-correct">Пройден</span>}
               </div>
               <p className="module-summary">{module.summary}</p>
-              <p className="module-progress">
-                Заданий пройдено: {итог.passed} из {итог.total}
-                {итог.returnedForRetry > 0 && (
-                  <span className="module-progress-retry">
-                    {' '}
-                    · на повторении: {итог.returnedForRetry}
-                  </span>
-                )}
-              </p>
-              {locked && первыйНепройденный && (
-                <p className="module-lock-hint">
-                  Откроется после Модуля «{первыйНепройденный.title}»
-                </p>
+              <ModuleProgressLine progress={итог} />
+              {блокирующий && (
+                <p className="module-lock-hint">Откроется после Модуля «{блокирующий.title}»</p>
               )}
               <button
                 type="button"
                 className="button-primary"
-                disabled={locked}
+                disabled={блокирующий !== null}
                 onClick={() => onEnterModule(module.id)}
               >
                 {actionLabel}

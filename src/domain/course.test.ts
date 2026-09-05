@@ -13,7 +13,7 @@ import type { Task } from './task';
 // Фикстура: Курс из двух Модулей — по два Задания в каждом.
 // Реальный контент М1/М2 живёт в src/content и тестами редьюсера не используется.
 
-function задача(id: string): Task {
+function задание(id: string): Task {
   return {
     kind: 'choice-question',
     id,
@@ -25,8 +25,8 @@ function задача(id: string): Task {
 
 const course: CourseData = {
   modules: [
-    { id: 'm1', title: 'Основы DC', summary: '', theory: [], tasks: [задача('m1-a'), задача('m1-b')] },
-    { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [задача('m2-a')] },
+    { id: 'm1', title: 'Основы DC', summary: '', theory: [], tasks: [задание('m1-a'), задание('m1-b')] },
+    { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [задание('m2-a')] },
   ],
 };
 
@@ -117,6 +117,17 @@ describe('Блокировка Модулей', () => {
 
   it('неизвестный Модуль — ошибка контракта, а не «заблокирован»', () => {
     expect(() => isModuleLocked(course, emptyProgress, 'нет-такого')).toThrow();
+  });
+
+  it('Модуль без Заданий не блокирует Курс навсегда', () => {
+    const курсПустымМодулем: CourseData = {
+      modules: [
+        { id: 'пустой', title: 'Пустой', summary: '', theory: [], tasks: [] },
+        { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [задание('m2-a')] },
+      ],
+    };
+    expect(moduleProgressOf(курсПустымМодулем.modules[0], emptyProgress).completed).toBe(true);
+    expect(isModuleLocked(курсПустымМодулем, emptyProgress, 'm2')).toBe(false);
   });
 });
 

@@ -64,8 +64,8 @@ export interface ModuleProgress {
 export function moduleProgressOf(module: CourseModule, progress: CourseProgress): ModuleProgress {
   let passed = 0;
   let returnedForRetry = 0;
-  for (const task of module.tasks) {
-    const state = taskStateOf(progress, task.id);
+  for (const задание of module.tasks) {
+    const state = taskStateOf(progress, задание.id);
     if (state === 'passed') passed += 1;
     if (state === 'returned-for-retry') returnedForRetry += 1;
   }
@@ -73,8 +73,27 @@ export function moduleProgressOf(module: CourseModule, progress: CourseProgress)
     total: module.tasks.length,
     passed,
     returnedForRetry,
-    completed: module.tasks.length > 0 && passed === module.tasks.length,
+    // Пустой Модуль завершён «пусто»: иначе он заблокировал бы Курс навсегда.
+    // Непустоту Модулей гарантирует контент-линтер (тикет 12).
+    completed: passed === module.tasks.length,
   };
+}
+
+/** Модуль, который ещё не пройден и потому держит данный Модуль закрытым. */
+export function blockingModuleOf(
+  course: CourseData,
+  progress: CourseProgress,
+  moduleId: string,
+): CourseModule | null {
+  const index = course.modules.findIndex((module) => module.id === moduleId);
+  if (index === -1) {
+    throw new Error(`Курс не содержит Модуль «${moduleId}»`);
+  }
+  return (
+    course.modules
+      .slice(0, index)
+      .find((module) => !moduleProgressOf(module, progress).completed) ?? null
+  );
 }
 
 /** Заблокирован ли Модуль: следующий Модуль закрыт, пока не пройден предыдущий. */
@@ -83,13 +102,7 @@ export function isModuleLocked(
   progress: CourseProgress,
   moduleId: string,
 ): boolean {
-  const index = course.modules.findIndex((module) => module.id === moduleId);
-  if (index === -1) {
-    throw new Error(`Курс не содержит Модуль «${moduleId}»`);
-  }
-  return course.modules
-    .slice(0, index)
-    .some((module) => !moduleProgressOf(module, progress).completed);
+  return blockingModuleOf(course, progress, moduleId) !== null;
 }
 
 /**
@@ -99,10 +112,10 @@ export function isModuleLocked(
 export function moduleTaskQueue(module: CourseModule, progress: CourseProgress): readonly Task[] {
   const fresh: Task[] = [];
   const retry: Task[] = [];
-  for (const task of module.tasks) {
-    const state = taskStateOf(progress, task.id);
-    if (state === 'not-started') fresh.push(task);
-    if (state === 'returned-for-retry') retry.push(task);
+  for (const задание of module.tasks) {
+    const state = taskStateOf(progress, задание.id);
+    if (state === 'not-started') fresh.push(задание);
+    if (state === 'returned-for-retry') retry.push(задание);
   }
   return [...fresh, ...retry];
 }

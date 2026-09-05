@@ -505,14 +505,53 @@ body {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 16px;
   flex-wrap: wrap;
 }
 
-.module-header .module-progress {
-  margin: 0;
+.module-header-state {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.module-header-state .module-progress {
+  margin: 0;
+}
+
+/* Состояние каждого Задания Модуля */
+
+.task-progress {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.task-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-raised);
+}
+
+.task-dot-passed {
+  background: var(--correct);
+  border-color: var(--correct);
+}
+
+.task-dot-returned-for-retry {
+  background: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.task-dot-not-started {
+  background: transparent;
 }
 
 .link-back {

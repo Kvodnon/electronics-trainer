@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../App';
+import { войтиВЗаданияМодуля1 } from '../testing/navigation';
 
 // Курс, Теория и Прогресс — по настоящим данным приложения, домен не мокается.
 // «Перезагрузка страницы» моделируется размонтированием и новым рендером App:
@@ -58,9 +59,7 @@ describe('Прогресс между сессиями', () => {
     const user = userEvent.setup();
     const первая = render(<App />);
 
-    await user.click(screen.getByRole('button', { name: 'Начать' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await войтиВЗаданияМодуля1(user);
     await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
@@ -88,21 +87,25 @@ describe('Повтор ошибок внутри Модуля', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await user.click(screen.getByRole('button', { name: 'Начать' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await войтиВЗаданияМодуля1(user);
+
+    // Внутри Модуля видно состояние каждого Задания
+    expect(screen.getByTitle('Задание 1 — не начато')).toBeInTheDocument();
+    expect(screen.getByTitle('Задание 2 — не начато')).toBeInTheDocument();
 
     // Ошибка в первом Задании → оно уходит на повтор, вперёд идёт второе
     await user.click(screen.getByRole('button', { name: 'Ток не изменится' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
     expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
     expect(screen.getByText(/на повторении: 1/)).toBeInTheDocument();
+    expect(screen.getByTitle('Задание 1 — на повторении')).toBeInTheDocument();
 
     // Второе закрыто верно → очередь возвращается к первому
     await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
     await user.click(screen.getByRole('button', { name: 'Ответить' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
     expect(screen.getByText(/удвоили напряжение источника/)).toBeInTheDocument();
+    expect(screen.getByTitle('Задание 2 — пройдено')).toBeInTheDocument();
 
     // Первое решено — Модуль завершён
     await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));

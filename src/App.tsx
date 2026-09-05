@@ -22,7 +22,7 @@ export function App() {
   }, [progress]);
 
   const module =
-    moduleId === null ? null : (course.modules.find((м) => м.id === moduleId) ?? null);
+    moduleId === null ? null : (course.modules.find((m) => m.id === moduleId) ?? null);
 
   return (
     <div className="app">
