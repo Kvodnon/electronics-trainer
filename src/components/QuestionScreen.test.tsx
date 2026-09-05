@@ -44,7 +44,7 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(разборВчетверо!).toHaveTextContent(/P = U² \/ R/);
   });
 
-  it('верный ответ → вердикт «Верно», «Дальше» завершает Вопрос, повторный проход сбрасывает', async () => {
+  it('верный ответ → вердикт «Верно», «Дальше» ведёт к числовому Вопросу и далее к финалу', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -53,7 +53,14 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(screen.getByText('Верно')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    expect(screen.getByText('Демонстрационный Вопрос пройден')).toBeInTheDocument();
+    // Второе Задание последовательности — числовой Вопрос
+    expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
+    await user.click(screen.getByRole('button', { name: 'Ответить' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
+    expect(screen.getByText('Демонстрационные Задания пройдены')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Пройти ещё раз' }));
     expect(screen.getByRole('button', { name: 'Ток удвоится' })).toBeEnabled();

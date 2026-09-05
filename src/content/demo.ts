@@ -1,7 +1,7 @@
-import type { ChoiceQuestion } from '../domain/task';
+import type { ChoiceQuestion, NumericQuestion, Task } from '../domain/task';
 
 /**
- * Демонстрационный Вопрос — единственные данные каркаса (тикет 01).
+ * Демонстрационные Задания — единственные данные каркаса (тикет 01–02).
  * Контент Модулей придёт отдельными файлами волнами М1–М4.
  */
 export const demoQuestion: ChoiceQuestion = {
@@ -37,3 +37,22 @@ export const demoQuestion: ChoiceQuestion = {
   ],
   correctChoiceId: 'double',
 };
+
+export const demoNumericQuestion: NumericQuestion = {
+  kind: 'numeric-question',
+  id: 'demo-ohm-02',
+  prompt: 'К резистору сопротивлением 1 кОм приложено напряжение 10 В. Чему равен ток в цепи?',
+  unit: 'А',
+  expectedValue: 0.01, // 10 мА; допуск — по умолчанию ±5%
+  razbor:
+    'Верно: I = U / R = 10 В / 1000 Ом = 0,01 А = 10 мА. Полезно чувствовать масштаб: при вольтах и килоомах ток получается в миллиамперах, а не в амперах.',
+  solutionSteps: [
+    'Выпишите закон Ома для участка цепи: I = U / R.',
+    'Переведите сопротивление в базовую единицу: 1 кОм = 1000 Ом.',
+    'Подставьте значения: I = 10 В / 1000 Ом = 0,01 А.',
+    'Для самопроверки переведите в миллиамперы: 0,01 А = 10 мА — обе записи означают один и тот же ответ.',
+  ],
+};
+
+/** Последовательность демо-Заданий каркаса; Курс из Модулей придёт в тикете 03. */
+export const demoTasks: readonly Task[] = [demoQuestion, demoNumericQuestion];
