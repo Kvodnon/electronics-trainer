@@ -15,25 +15,25 @@ interface SymbolEntry {
 }
 
 /** Вывод слева от символа — до координаты x. */
-const выводСлева = (до: number) => <path d={`M4 24 H${до}`} />;
+const leadLeftTo = (endX: number) => <path d={`M4 24 H${endX}`} />;
 /** Вывод справа от символа — от координаты x. */
-const выводСправа = (от: number) => <path d={`M${от} 24 H136`} />;
+const leadRightFrom = (startX: number) => <path d={`M${startX} 24 H136`} />;
 
 const registry: Record<ComponentSymbolId, SymbolEntry> = {
   resistor: {
     name: 'Резистор',
     gost: (
       <>
-        {выводСлева(38)}
+        {leadLeftTo(38)}
         <rect x="38" y="16" width="64" height="16" />
-        {выводСправа(102)}
+        {leadRightFrom(102)}
       </>
     ),
     ansi: (
       <>
-        {выводСлева(38)}
+        {leadLeftTo(38)}
         <path d="M38 24 L46 10 L62 38 L78 10 L94 38 L102 24" />
-        {выводСправа(102)}
+        {leadRightFrom(102)}
       </>
     ),
   },
@@ -41,18 +41,18 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
     name: 'Источник постоянного напряжения',
     gost: (
       <>
-        {выводСлева(58)}
+        {leadLeftTo(58)}
         {/* батарея из двух гальванических элементов: длинная пластина — «плюс» */}
         <path d="M58 6 V42 M68 15 V33 M78 6 V42 M88 15 V33" />
         <text x="50" y="11" className="symbol-sign" stroke="none">
           +
         </text>
-        {выводСправа(88)}
+        {leadRightFrom(88)}
       </>
     ),
     ansi: (
       <>
-        {выводСлева(54)}
+        {leadLeftTo(54)}
         <circle cx="70" cy="24" r="16" />
         <text x="63" y="29" className="symbol-sign" stroke="none">
           +
@@ -60,7 +60,7 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
         <text x="74" y="29" className="symbol-sign" stroke="none">
           −
         </text>
-        {выводСправа(86)}
+        {leadRightFrom(86)}
       </>
     ),
   },
@@ -68,18 +68,18 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
     name: 'Конденсатор',
     gost: (
       <>
-        {выводСлева(64)}
+        {leadLeftTo(64)}
         <path d="M64 8 V40 M76 8 V40" />
-        {выводСправа(76)}
+        {leadRightFrom(76)}
       </>
     ),
     ansi: (
       <>
-        {выводСлева(64)}
+        {leadLeftTo(64)}
         <path d="M64 8 V40" />
         {/* вторая пластина — дугой, вершиной к выводу */}
         <path d="M76 8 Q88 24 76 40" />
-        {выводСправа(82)}
+        {leadRightFrom(82)}
       </>
     ),
   },

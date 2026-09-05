@@ -22,36 +22,36 @@ export function CourseScreen({ course, progress, onEnterModule }: CourseScreenPr
 
       <ul className="module-list">
         {course.modules.map((module, index) => {
-          const итог = moduleProgressOf(module, progress);
-          const блокирующий = blockingModuleOf(course, progress, module.id);
+          const moduleProgress = moduleProgressOf(module, progress);
+          const blocker = blockingModuleOf(course, progress, module.id);
           const actionLabel =
-            блокирующий !== null
+            blocker !== null
               ? 'Заблокирован'
-              : итог.completed
+              : moduleProgress.completed
                 ? 'Повторить'
-                : итог.passed > 0 || итог.returnedForRetry > 0
+                : moduleProgress.passed > 0 || moduleProgress.returnedForRetry > 0
                   ? 'Продолжить'
                   : 'Начать';
 
           return (
             <li
               key={module.id}
-              className={`module-card ${блокирующий !== null ? 'module-card-locked' : ''}`}
+              className={`module-card ${blocker !== null ? 'module-card-locked' : ''}`}
             >
               <div className="module-head">
                 <p className="module-index">Модуль {index + 1}</p>
                 <h3 className="module-title">{module.title}</h3>
-                {итог.completed && <span className="chip chip-correct">Пройден</span>}
+                {moduleProgress.completed && <span className="chip chip-correct">Пройден</span>}
               </div>
               <p className="module-summary">{module.summary}</p>
-              <ModuleProgressLine progress={итог} />
-              {блокирующий && (
-                <p className="module-lock-hint">Откроется после Модуля «{блокирующий.title}»</p>
+              <ModuleProgressLine progress={moduleProgress} />
+              {blocker && (
+                <p className="module-lock-hint">Откроется после Модуля «{blocker.title}»</p>
               )}
               <button
                 type="button"
                 className="button-primary"
-                disabled={блокирующий !== null}
+                disabled={blocker !== null}
                 onClick={() => onEnterModule(module.id)}
               >
                 {actionLabel}

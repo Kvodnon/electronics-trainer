@@ -1,13 +1,13 @@
 import type { ModuleProgress, TaskState } from '../domain/course';
 
-const состояние: Record<TaskState, string> = {
+const stateNames: Record<TaskState, string> = {
   'not-started': 'не начато',
   passed: 'пройдено',
   'returned-for-retry': 'на повторении',
 };
 
 export function taskStateName(state: TaskState): string {
-  return состояние[state];
+  return stateNames[state];
 }
 
 /** Строка Прогресса Модуля: сколько Заданий пройдено, сколько на повторении. */

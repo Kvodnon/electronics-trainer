@@ -4,7 +4,7 @@ import type { CourseProgress } from '../domain/course';
 
 // Прогресс хранится в localStorage браузера; jsdom даёт настоящую реализацию.
 
-const прогресс: CourseProgress = {
+const progress: CourseProgress = {
   taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'returned-for-retry' },
 };
 
@@ -18,12 +18,12 @@ describe('Сохранение Прогресса между сессиями', 
   });
 
   it('сохранённый Прогресс читается без искажений', () => {
-    saveProgress(прогресс);
-    expect(loadProgress()).toEqual(прогресс);
+    saveProgress(progress);
+    expect(loadProgress()).toEqual(progress);
   });
 
   it('новое сохранение затирает предыдущее', () => {
-    saveProgress(прогресс);
+    saveProgress(progress);
     saveProgress({ taskStates: {} });
     expect(loadProgress()).toEqual({ taskStates: {} });
   });
@@ -47,19 +47,19 @@ describe('Сохранение Прогресса между сессиями', 
   });
 
   it('ошибка записи хранилища не роняет приложение', () => {
-    const эмуляцияОтказа = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const storageFailureSpy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new DOMException('quota exceeded');
     });
-    expect(() => saveProgress(прогресс)).not.toThrow();
-    эмуляцияОтказа.mockRestore();
+    expect(() => saveProgress(progress)).not.toThrow();
+    storageFailureSpy.mockRestore();
   });
 
   it('ошибка чтения хранилища трактуется как «Прогресса нет»', () => {
-    const эмуляцияОтказа = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    const storageFailureSpy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('storage unavailable');
     });
     expect(loadProgress()).toBeNull();
-    эмуляцияОтказа.mockRestore();
+    storageFailureSpy.mockRestore();
   });
 });
 

@@ -13,7 +13,7 @@ import type { Task } from './task';
 // Фикстура: Курс из двух Модулей — по два Задания в каждом.
 // Реальный контент М1/М2 живёт в src/content и тестами редьюсера не используется.
 
-function задание(id: string): Task {
+function makeTask(id: string): Task {
   return {
     kind: 'choice-question',
     id,
@@ -25,8 +25,8 @@ function задание(id: string): Task {
 
 const course: CourseData = {
   modules: [
-    { id: 'm1', title: 'Основы DC', summary: '', theory: [], tasks: [задание('m1-a'), задание('m1-b')] },
-    { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [задание('m2-a')] },
+    { id: 'm1', title: 'Основы DC', summary: '', theory: [], tasks: [makeTask('m1-a'), makeTask('m1-b')] },
+    { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [makeTask('m2-a')] },
   ],
 };
 
@@ -50,8 +50,8 @@ describe('Прогресс: состояния Заданий', () => {
 
   it('повторное прохождение — идемпотентно', () => {
     const progress = passed('m1-a');
-    const снова = progressReducer(progress, { type: 'task-passed', taskId: 'm1-a' });
-    expect(taskStateOf(снова, 'm1-a')).toBe('passed');
+    const again = progressReducer(progress, { type: 'task-passed', taskId: 'm1-a' });
+    expect(taskStateOf(again, 'm1-a')).toBe('passed');
   });
 
   it('ошибка отправляет Задание на повтор', () => {
@@ -64,25 +64,25 @@ describe('Прогресс: состояния Заданий', () => {
 
   it('пройденное Задание не возвращается на повтор — «пройдено» терминально', () => {
     const progress = passed('m1-a');
-    const после = progressReducer(progress, { type: 'task-returned-for-retry', taskId: 'm1-a' });
-    expect(taskStateOf(после, 'm1-a')).toBe('passed');
+    const after = progressReducer(progress, { type: 'task-returned-for-retry', taskId: 'm1-a' });
+    expect(taskStateOf(after, 'm1-a')).toBe('passed');
   });
 
   it('редьюсер не мутирует предыдущее состояние', () => {
     const progress = passed('m1-a');
-    const копия = structuredClone(progress);
+    const copy = structuredClone(progress);
     progressReducer(progress, { type: 'task-passed', taskId: 'm1-b' });
-    expect(progress).toEqual(копия);
+    expect(progress).toEqual(copy);
   });
 });
 
 describe('Прогресс Модуля', () => {
   it('считает пройденные Задания и завершённость', () => {
     const progress = passed('m1-a');
-    const итог = moduleProgressOf(course.modules[0], progress);
-    expect(итог.total).toBe(2);
-    expect(итог.passed).toBe(1);
-    expect(итог.completed).toBe(false);
+    const moduleProgress = moduleProgressOf(course.modules[0], progress);
+    expect(moduleProgress.total).toBe(2);
+    expect(moduleProgress.passed).toBe(1);
+    expect(moduleProgress.completed).toBe(false);
   });
 
   it('все Задания пройдены — Модуль завершён', () => {
@@ -95,9 +95,9 @@ describe('Прогресс Модуля', () => {
       type: 'task-returned-for-retry',
       taskId: 'm1-b',
     });
-    const итог = moduleProgressOf(course.modules[0], progress);
-    expect(итог.completed).toBe(false);
-    expect(итог.returnedForRetry).toBe(1);
+    const moduleProgress = moduleProgressOf(course.modules[0], progress);
+    expect(moduleProgress.completed).toBe(false);
+    expect(moduleProgress.returnedForRetry).toBe(1);
   });
 });
 
@@ -120,26 +120,26 @@ describe('Блокировка Модулей', () => {
   });
 
   it('Модуль без Заданий не блокирует Курс навсегда', () => {
-    const курсПустымМодулем: CourseData = {
+    const courseWithEmptyModule: CourseData = {
       modules: [
         { id: 'пустой', title: 'Пустой', summary: '', theory: [], tasks: [] },
-        { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [задание('m2-a')] },
+        { id: 'm2', title: 'Компоненты', summary: '', theory: [], tasks: [makeTask('m2-a')] },
       ],
     };
-    expect(moduleProgressOf(курсПустымМодулем.modules[0], emptyProgress).completed).toBe(true);
-    expect(isModuleLocked(курсПустымМодулем, emptyProgress, 'm2')).toBe(false);
+    expect(moduleProgressOf(courseWithEmptyModule.modules[0], emptyProgress).completed).toBe(true);
+    expect(isModuleLocked(courseWithEmptyModule, emptyProgress, 'm2')).toBe(false);
   });
 });
 
 describe('Очередь Заданий Модуля', () => {
   it('в начале — все непройденные Задания в порядке Модуля', () => {
-    const очередь = moduleTaskQueue(course.modules[0], emptyProgress);
-    expect(очередь.map((task) => task.id)).toEqual(['m1-a', 'm1-b']);
+    const queue = moduleTaskQueue(course.modules[0], emptyProgress);
+    expect(queue.map((task) => task.id)).toEqual(['m1-a', 'm1-b']);
   });
 
   it('пройденные Задания выпадают из очереди', () => {
-    const очередь = moduleTaskQueue(course.modules[0], passed('m1-a'));
-    expect(очередь.map((task) => task.id)).toEqual(['m1-b']);
+    const queue = moduleTaskQueue(course.modules[0], passed('m1-a'));
+    expect(queue.map((task) => task.id)).toEqual(['m1-b']);
   });
 
   it('Задание на повторении встаёт в конец, даже если в Модуле оно было первым', () => {
@@ -148,11 +148,11 @@ describe('Очередь Заданий Модуля', () => {
       taskId: 'm1-a',
     });
     // m1-a вернулось на повтор, m1-b ещё не начато — вперёд идёт не начатое
-    const очередь = moduleTaskQueue(course.modules[0], progress);
-    expect(очередь.map((task) => task.id)).toEqual(['m1-b', 'm1-a']);
+    const queue = moduleTaskQueue(course.modules[0], progress);
+    expect(queue.map((task) => task.id)).toEqual(['m1-b', 'm1-a']);
   });
 
-  it('пустая очередь — Модуль пройден', () => {
+  it('пустая queue — Модуль пройден', () => {
     expect(moduleTaskQueue(course.modules[0], passed('m1-a', 'm1-b'))).toEqual([]);
   });
 });

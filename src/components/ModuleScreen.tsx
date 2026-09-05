@@ -18,7 +18,7 @@ interface ModuleScreenProps {
 /**
  * Экран Модуля: сначала карточки Теории, затем Задания по очереди.
  * Текущее Задание — первое в очереди `moduleTaskQueue` (не начатые вперёд,
- * вернувшиеся на повтор — в конец); очередь пуста — Модуль завершён.
+ * вернувшиеся на повтор — в конец); пустая очередь — Модуль завершён.
  */
 export function ModuleScreen({
   module,
@@ -33,19 +33,19 @@ export function ModuleScreen({
   // то же Задание вернулось на повтор — поле ввода очищается.
   const [step, setStep] = useState(0);
 
-  const итог = moduleProgressOf(module, progress);
-  const очередь = moduleTaskQueue(module, progress);
-  const задание = очередь[0];
-  const evaluation = задание && answer ? evaluate(задание, answer) : null;
+  const moduleProgress = moduleProgressOf(module, progress);
+  const queue = moduleTaskQueue(module, progress);
+  const currentTask = queue[0];
+  const evaluation = currentTask && answer ? evaluate(currentTask, answer) : null;
 
-  function идёмДальше() {
-    if (!задание) return;
+  function goNext() {
+    if (!currentTask) return;
     onProgressAction({
       type: evaluation?.outcome === 'correct' ? 'task-passed' : 'task-returned-for-retry',
-      taskId: задание.id,
+      taskId: currentTask.id,
     });
     setAnswer(null);
-    setStep((номер) => номер + 1);
+    setStep((n) => n + 1);
   }
 
   return (
@@ -56,13 +56,13 @@ export function ModuleScreen({
         </button>
         <h2 className="module-header-title">{module.title}</h2>
         <div className="module-header-state">
-          <ModuleProgressLine progress={итог} />
+          <ModuleProgressLine progress={moduleProgress} />
           <ul className="task-progress" aria-label="Состояние Заданий Модуля">
-            {module.tasks.map((заданиеМодуля, index) => {
-              const state = taskStateOf(progress, заданиеМодуля.id);
+            {module.tasks.map((moduleTask, index) => {
+              const state = taskStateOf(progress, moduleTask.id);
               return (
                 <li
-                  key={заданиеМодуля.id}
+                  key={moduleTask.id}
                   className={`task-dot task-dot-${state}`}
                   title={`Задание ${index + 1} — ${taskStateName(state)}`}
                 />
@@ -79,22 +79,22 @@ export function ModuleScreen({
           onFinish={() => setPhase('tasks')}
           onNextCard={() => setCardIndex((index) => index + 1)}
         />
-      ) : задание ? (
-        задание.kind === 'choice-question' ? (
+      ) : currentTask ? (
+        currentTask.kind === 'choice-question' ? (
           <QuestionScreen
-            key={`${задание.id}:${step}`}
-            question={задание}
+            key={`${currentTask.id}:${step}`}
+            question={currentTask}
             evaluation={evaluationOfKind(evaluation, 'choice-question')}
             onAnswer={(choiceId) => setAnswer({ kind: 'choice-answer', chosenChoiceId: choiceId })}
-            onNext={идёмДальше}
+            onNext={goNext}
           />
         ) : (
           <NumericQuestionScreen
-            key={`${задание.id}:${step}`}
-            question={задание}
+            key={`${currentTask.id}:${step}`}
+            question={currentTask}
             evaluation={evaluationOfKind(evaluation, 'numeric-question')}
             onAnswer={setAnswer}
-            onNext={идёмДальше}
+            onNext={goNext}
           />
         )
       ) : (
@@ -122,7 +122,7 @@ interface TheoryCardViewProps {
 
 /** Карточка Теории: текст, формулы и обозначения двух стандартов рядом. */
 function TheoryCardView({ card, position, onNextCard, onFinish }: TheoryCardViewProps) {
-  const последняя = position.index + 1 >= position.total;
+  const isLastCard = position.index + 1 >= position.total;
   return (
     <section className="panel theory" aria-labelledby="theory-title">
       <p className="question-kind">
@@ -132,16 +132,16 @@ function TheoryCardView({ card, position, onNextCard, onFinish }: TheoryCardView
         {card.title}
       </h2>
 
-      {card.paragraphs.map((абзац) => (
-        <p key={абзац} className="theory-paragraph">
-          {абзац}
+      {card.paragraphs.map((paragraph) => (
+        <p key={paragraph} className="theory-paragraph">
+          {paragraph}
         </p>
       ))}
 
-      {card.formulas?.map((формула) => (
-        <p key={формула.text} className="theory-formula">
-          <code className="formula-expression">{формула.text}</code>
-          {формула.caption && <span className="formula-caption">{формула.caption}</span>}
+      {card.formulas?.map((formula) => (
+        <p key={formula.text} className="theory-formula">
+          <code className="formula-expression">{formula.text}</code>
+          {formula.caption && <span className="formula-caption">{formula.caption}</span>}
         </p>
       ))}
 
@@ -149,8 +149,8 @@ function TheoryCardView({ card, position, onNextCard, onFinish }: TheoryCardView
         <ComponentSymbol key={id} id={id} />
       ))}
 
-      <button type="button" className="button-primary" onClick={последняя ? onFinish : onNextCard}>
-        {последняя ? 'К Заданиям' : 'Дальше'}
+      <button type="button" className="button-primary" onClick={isLastCard ? onFinish : onNextCard}>
+        {isLastCard ? 'К Заданиям' : 'Дальше'}
       </button>
     </section>
   );

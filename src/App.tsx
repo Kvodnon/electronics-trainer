@@ -12,8 +12,8 @@ import { loadProgress, saveProgress } from './storage/progressStorage';
  */
 export function App() {
   const [progress, dispatch] = useReducer(progressReducer, null, () => {
-    const сохранённый = loadProgress();
-    return сохранённый ?? emptyProgress;
+    const saved = loadProgress();
+    return saved ?? emptyProgress;
   });
   const [moduleId, setModuleId] = useState<string | null>(null);
 

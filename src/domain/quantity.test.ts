@@ -54,29 +54,29 @@ describe('parseQuantity: десятичные разделители', () => {
 
 describe('parseQuantity: неверный ввод отклоняется с понятным сообщением', () => {
   it('пустой ввод', () => {
-    const результат = parseQuantity('   ', 'А');
-    expect(результат.status).toBe('error');
-    expect(результат.status === 'error' && результат.message).toMatch(/введите/i);
+    const result = parseQuantity('   ', 'А');
+    expect(result.status).toBe('error');
+    expect(result.status === 'error' && result.message).toMatch(/введите/i);
   });
 
   it('мусор без числа', () => {
-    const результат = parseQuantity('абракадабра', 'А');
-    expect(результат.status).toBe('error');
-    expect(результат.status === 'error' && результат.message).toMatch(/не удалось прочитать число/i);
+    const result = parseQuantity('абракадабра', 'А');
+    expect(result.status).toBe('error');
+    expect(result.status === 'error' && result.message).toMatch(/не удалось прочитать число/i);
   });
 
   it('неизвестный суффикс — сообщение называет его и подсказывает допустимые', () => {
-    const результат = parseQuantity('10кг', 'А');
-    expect(результат.status).toBe('error');
-    expect(результат.status === 'error' && результат.message).toContain('кг');
-    expect(результат.status === 'error' && результат.message).toContain('мА');
+    const result = parseQuantity('10кг', 'А');
+    expect(result.status).toBe('error');
+    expect(result.status === 'error' && result.message).toContain('кг');
+    expect(result.status === 'error' && result.message).toContain('мА');
   });
 
   it('суффикс чужой величины отклоняется с подсказкой по своей величине', () => {
-    const результат = parseQuantity('10мА', 'В');
-    expect(результат.status).toBe('error');
-    expect(результат.status === 'error' && результат.message).toContain('мВ');
-    expect(результат.status === 'error' && результат.message).toContain('кВ');
+    const result = parseQuantity('10мА', 'В');
+    expect(result.status).toBe('error');
+    expect(result.status === 'error' && result.message).toContain('мВ');
+    expect(result.status === 'error' && result.message).toContain('кВ');
   });
 
   it('два разделителя и пробел-разделитель разрядов не читаются как число', () => {

@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../App';
-import { войтиВЗаданияМодуля1 } from '../testing/navigation';
+import { enterModule1Tasks } from '../testing/navigation';
 
 // Тест идёт по потоку Вопроса: ответ → Разбор → следующий.
 // Домен не мокается, используются настоящие данные приложения.
@@ -11,7 +11,7 @@ describe('Вопрос с выбором варианта: поток от от�
   it('клик по неверному варианту → вердикт «Неверно» и Разбор к каждому варианту', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await войтиВЗаданияМодуля1(user);
+    await enterModule1Tasks(user);
 
     await user.click(screen.getByRole('button', { name: 'Ток уменьшится вдвое' }));
 
@@ -19,37 +19,37 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(screen.getByText('Правильный ответ: Ток удвоится')).toBeInTheDocument();
 
     // Разбор к каждому варианту, не только к выбранному
-    const секцияРазборов = screen.getByRole('region', { name: 'Разборы' });
-    const разборы = within(секцияРазборов).getAllByRole('listitem');
-    expect(разборы).toHaveLength(4);
+    const reviewsSection = screen.getByRole('region', { name: 'Разборы' });
+    const reviews = within(reviewsSection).getAllByRole('listitem');
+    expect(reviews).toHaveLength(4);
 
-    const разборУменьшится = разборы.find((элемент) =>
-      within(элемент).queryByText('Ток уменьшится вдвое'),
+    const reviewHalved = reviews.find((item) =>
+      within(item).queryByText('Ток уменьшится вдвое'),
     );
-    expect(разборУменьшится).toBeDefined();
-    expect(разборУменьшится!).toHaveTextContent(/пропорциональность перепутаны/);
-    expect(разборУменьшится!).toHaveTextContent('ваш ответ');
+    expect(reviewHalved).toBeDefined();
+    expect(reviewHalved!).toHaveTextContent(/пропорциональность перепутаны/);
+    expect(reviewHalved!).toHaveTextContent('ваш ответ');
 
-    const разборУдвоится = разборы.find((элемент) =>
-      within(элемент).queryByText('Ток удвоится'),
+    const reviewDoubled = reviews.find((item) =>
+      within(item).queryByText('Ток удвоится'),
     );
-    expect(разборУдвоится).toHaveTextContent(/18 мА/);
+    expect(reviewDoubled).toHaveTextContent(/18 мА/);
 
-    const разборНеИзменится = разборы.find((элемент) =>
-      within(элемент).queryByText('Ток не изменится'),
+    const reviewUnchanged = reviews.find((item) =>
+      within(item).queryByText('Ток не изменится'),
     );
-    expect(разборНеИзменится).toHaveTextContent(/свойство самой цепи/);
+    expect(reviewUnchanged).toHaveTextContent(/свойство самой цепи/);
 
-    const разборВчетверо = разборы.find((элемент) =>
-      within(элемент).queryByText('Ток увеличится вчетверо'),
+    const reviewQuadrupled = reviews.find((item) =>
+      within(item).queryByText('Ток увеличится вчетверо'),
     );
-    expect(разборВчетверо).toHaveTextContent(/P = U² \/ R/);
+    expect(reviewQuadrupled).toHaveTextContent(/P = U² \/ R/);
   });
 
   it('верный ответ → «Дальше» ведёт к числовому Вопросу, затем Модуль завершается', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await войтиВЗаданияМодуля1(user);
+    await enterModule1Tasks(user);
 
     await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
 

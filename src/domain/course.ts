@@ -64,8 +64,8 @@ export interface ModuleProgress {
 export function moduleProgressOf(module: CourseModule, progress: CourseProgress): ModuleProgress {
   let passed = 0;
   let returnedForRetry = 0;
-  for (const задание of module.tasks) {
-    const state = taskStateOf(progress, задание.id);
+  for (const task of module.tasks) {
+    const state = taskStateOf(progress, task.id);
     if (state === 'passed') passed += 1;
     if (state === 'returned-for-retry') returnedForRetry += 1;
   }
@@ -112,10 +112,10 @@ export function isModuleLocked(
 export function moduleTaskQueue(module: CourseModule, progress: CourseProgress): readonly Task[] {
   const fresh: Task[] = [];
   const retry: Task[] = [];
-  for (const задание of module.tasks) {
-    const state = taskStateOf(progress, задание.id);
-    if (state === 'not-started') fresh.push(задание);
-    if (state === 'returned-for-retry') retry.push(задание);
+  for (const task of module.tasks) {
+    const state = taskStateOf(progress, task.id);
+    if (state === 'not-started') fresh.push(task);
+    if (state === 'returned-for-retry') retry.push(task);
   }
   return [...fresh, ...retry];
 }

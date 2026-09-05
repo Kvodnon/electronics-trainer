@@ -2,14 +2,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../App';
-import { войтиВЗаданияМодуля1 } from '../testing/navigation';
+import { enterModule1Tasks } from '../testing/navigation';
 
 // Курс, Теория и Прогресс — по настоящим данным приложения, домен не мокается.
 // «Перезагрузка страницы» моделируется размонтированием и новым рендером App:
 // Прогресс восстанавливается из localStorage.
 
 describe('Экран Курса', () => {
-  it('показывает Модули с Прогрессом; следующий заблокирован', () => {
+  it('показывает Модули с Прогрессом; следующий lockedButton', () => {
     render(<App />);
 
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
@@ -21,14 +21,14 @@ describe('Экран Курса', () => {
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
-    const заблокирован = screen.getByRole('button', { name: 'Заблокирован' });
-    expect(заблокирован).toBeDisabled();
+    const lockedButton = screen.getByRole('button', { name: 'Заблокирован' });
+    expect(lockedButton).toBeDisabled();
     expect(screen.getByText('Откроется после Модуля «Основы DC»')).toBeInTheDocument();
   });
 });
 
 describe('Теория перед Заданиями Модуля', () => {
-  it('карточки идут по очереди; обозначения — в двух стандартах рядом', async () => {
+  it('карточки идут по очереди; symbolFigures — в двух стандартах рядом', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -38,8 +38,8 @@ describe('Теория перед Заданиями Модуля', () => {
     expect(screen.getByText('Теория · карточка 1 из 2')).toBeInTheDocument();
     expect(screen.getByText('Резистор')).toBeInTheDocument();
     expect(screen.getByText('Источник постоянного напряжения')).toBeInTheDocument();
-    const обозначения = screen.getAllByRole('img', { name: /Обозначение: стандарт/ });
-    expect(обозначения).toHaveLength(4);
+    const symbolFigures = screen.getAllByRole('img', { name: /Обозначение: стандарт/ });
+    expect(symbolFigures).toHaveLength(4);
     expect(screen.getAllByText('ГОСТ / IEC')).toHaveLength(2);
     expect(screen.getAllByText('ANSI')).toHaveLength(2);
 
@@ -57,16 +57,16 @@ describe('Теория перед Заданиями Модуля', () => {
 describe('Прогресс между сессиями', () => {
   it('перезагрузка страницы не теряет Прогресс: Курс и очередь Заданий на месте', async () => {
     const user = userEvent.setup();
-    const первая = render(<App />);
+    const firstRender = render(<App />);
 
-    await войтиВЗаданияМодуля1(user);
+    await enterModule1Tasks(user);
     await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
     // Первое Задание пройдено, на экране второе
     expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
 
-    первая.unmount();
+    firstRender.unmount();
     render(<App />);
 
     // Курс помнит Прогресс М1; М2 всё ещё заблокирована
@@ -87,7 +87,7 @@ describe('Повтор ошибок внутри Модуля', () => {
     const user = userEvent.setup();
     render(<App />);
 
-    await войтиВЗаданияМодуля1(user);
+    await enterModule1Tasks(user);
 
     // Внутри Модуля видно состояние каждого Задания
     expect(screen.getByTitle('Задание 1 — не начато')).toBeInTheDocument();
