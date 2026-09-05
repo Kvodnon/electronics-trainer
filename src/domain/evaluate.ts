@@ -57,6 +57,19 @@ export interface NumericQuestionEvaluation {
 /** Вердикт проверки Задания. */
 export type Evaluation = ChoiceQuestionEvaluation | NumericQuestionEvaluation;
 
+/**
+ * Вердикт указанного вида или null. Вызывающий знает вид Задания, а TypeScript
+ * не выводит вид вердикта из вида Задания — это единое место сужения типа.
+ */
+export function evaluationOfKind<K extends Evaluation['kind']>(
+  evaluation: Evaluation | null,
+  kind: K,
+): Extract<Evaluation, K> | null {
+  return evaluation !== null && evaluation.kind === kind
+    ? (evaluation as Extract<Evaluation, K>)
+    : null;
+}
+
 /** Допуск числового Ответа по умолчанию: ±5%, если Задание не задало свой. */
 const DEFAULT_TOLERANCE = 0.05;
 

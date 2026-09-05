@@ -41,6 +41,17 @@ export function unitSuffixes(unit: QuantityUnit): readonly string[] {
   return UNIT_SUFFIXES[unit].map((entry) => entry.suffix);
 }
 
+/** Русское название величины для подсказок: «А» → «амперы». */
+const UNIT_NOUNS: Record<QuantityUnit, string> = {
+  'А': 'амперы',
+  'В': 'вольты',
+  'Ом': 'омы',
+};
+
+export function unitNoun(unit: QuantityUnit): string {
+  return UNIT_NOUNS[unit];
+}
+
 /** Число, за ним суффикс — слитно или через пробел. */
 const NUMBER_WITH_SUFFIX_RE = /^([+-]?)(\d+(?:[.,]\d*)?|[.,]\d+)(.*)$/;
 

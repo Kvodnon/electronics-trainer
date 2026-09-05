@@ -1,17 +1,12 @@
 import { useState } from 'react';
+import { Verdict } from './Verdict';
 import type { NumericAnswer, NumericQuestionEvaluation } from '../domain/evaluate';
 import type { NumericQuestion } from '../domain/task';
 import type { QuantityUnit } from '../domain/quantity';
-import { formatQuantity, parseQuantity, unitSuffixes } from '../domain/quantity';
-
-const UNIT_NOUNS: Record<QuantityUnit, string> = {
-  'А': 'амперы',
-  'В': 'вольты',
-  'Ом': 'омы',
-};
+import { formatQuantity, parseQuantity, unitNoun, unitSuffixes } from '../domain/quantity';
 
 function unitHint(unit: QuantityUnit): string {
-  return `Единицы: ${unitSuffixes(unit).join(', ')}; без суффикса — ${UNIT_NOUNS[unit]} (${unit}).`;
+  return `Единицы: ${unitSuffixes(unit).join(', ')}; без суффикса — ${unitNoun(unit)} (${unit}).`;
 }
 
 interface NumericQuestionScreenProps {
@@ -90,10 +85,7 @@ export function NumericQuestionScreen({
 
       {evaluation && (
         <>
-          <p role="status" className={`verdict verdict-${evaluation.outcome}`}>
-            <span className="verdict-word">
-              {evaluation.outcome === 'correct' ? 'Верно' : 'Неверно'}
-            </span>
+          <Verdict outcome={evaluation.outcome}>
             <span className="verdict-note">
               ваш ответ понят как {formatQuantity(evaluation.answeredValue, question.unit)}
             </span>
@@ -104,7 +96,7 @@ export function NumericQuestionScreen({
                 {Math.round(evaluation.tolerance * 100)}%)
               </span>
             )}
-          </p>
+          </Verdict>
 
           {evaluation.outcome === 'correct' ? (
             <section className="review-single" aria-labelledby="razbor-heading">

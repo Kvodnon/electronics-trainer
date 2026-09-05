@@ -4,13 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { NumericQuestionScreen } from './NumericQuestionScreen';
 import { demoNumericQuestion } from '../content/demo';
-import { evaluate } from '../domain/evaluate';
+import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import type { NumericAnswer } from '../domain/evaluate';
 
 // Тест идёт по потоку числового Вопроса: ввод → вердикт → решение/Разбор.
 // Домен не мокается, используются настоящие данные приложения.
 
-function ВопросСРемнём() {
+/** Экран с настоящим Заданием и подключённым состоянием Ответа. */
+function ЭкранВопроса() {
   const [answer, setAnswer] = useState<NumericAnswer | null>(null);
   const [пройден, setПройден] = useState(false);
   const evaluation = answer ? evaluate(demoNumericQuestion, answer) : null;
@@ -18,7 +19,7 @@ function ВопросСРемнём() {
   return (
     <NumericQuestionScreen
       question={demoNumericQuestion}
-      evaluation={evaluation !== null && evaluation.kind === 'numeric-question' ? evaluation : null}
+      evaluation={evaluationOfKind(evaluation, 'numeric-question')}
       onAnswer={setAnswer}
       onNext={() => setПройден(true)}
     />
@@ -33,7 +34,7 @@ async function ответить(user: ReturnType<typeof userEvent.setup>, тек
 describe('Числовой Вопрос: поток от ввода до перехода дальше', () => {
   it('мусор отклоняется с понятным сообщением, попытка не сжигается', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
 
     await ответить(user, 'абракадабра');
 
@@ -50,7 +51,7 @@ describe('Числовой Вопрос: поток от ввода до пер�
 
   it('неизвестный суффикс — сообщение называет его и допустимые единицы', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
 
     await ответить(user, '10кг');
 
@@ -60,21 +61,21 @@ describe('Числовой Вопрос: поток от ввода до пер�
 
   it('«0,01» — верный ответ', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
     await ответить(user, '0,01');
     expect(screen.getByText('Верно')).toBeInTheDocument();
   });
 
   it('«10мА» — тот же верный ответ в другой записи', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
     await ответить(user, '10мА');
     expect(screen.getByText('Верно')).toBeInTheDocument();
   });
 
   it('верный ответ → подтверждающий Разбор, «Дальше» завершает Вопрос', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
 
     await ответить(user, '10 мА');
 
@@ -88,7 +89,7 @@ describe('Числовой Вопрос: поток от ввода до пер�
 
   it('неверный ответ → принятый диапазон и пошаговое решение', async () => {
     const user = userEvent.setup();
-    render(<ВопросСРемнём />);
+    render(<ЭкранВопроса />);
 
     await ответить(user, '1');
 

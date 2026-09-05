@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Verdict } from './Verdict';
 import type { ChoiceQuestionEvaluation } from '../domain/evaluate';
 import type { ChoiceQuestion } from '../domain/task';
 
@@ -67,16 +68,13 @@ export function QuestionScreen({ question, evaluation, onAnswer, onNext }: Quest
 
       {evaluation && (
         <>
-          <p role="status" className={`verdict verdict-${evaluation.outcome}`}>
-            <span className="verdict-word">
-              {evaluation.outcome === 'correct' ? 'Верно' : 'Неверно'}
-            </span>
+          <Verdict outcome={evaluation.outcome}>
             {evaluation.outcome === 'incorrect' && correctReview && (
               <span className="verdict-correct-answer">
                 Правильный ответ: {correctReview.text}
               </span>
             )}
-          </p>
+          </Verdict>
 
           <section className="reviews" aria-labelledby="reviews-heading">
             <h3 id="reviews-heading">Разборы</h3>

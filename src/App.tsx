@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { QuestionScreen } from './components/QuestionScreen';
 import { NumericQuestionScreen } from './components/NumericQuestionScreen';
 import { demoTasks } from './content/demo';
-import { evaluate } from './domain/evaluate';
+import { evaluate, evaluationOfKind } from './domain/evaluate';
 import type { Answer } from './domain/evaluate';
 
 /**
@@ -62,9 +62,7 @@ export function App() {
         ) : task.kind === 'choice-question' ? (
           <QuestionScreen
             question={task}
-            evaluation={
-              evaluation !== null && evaluation.kind === 'choice-question' ? evaluation : null
-            }
+            evaluation={evaluationOfKind(evaluation, 'choice-question')}
             onAnswer={(choiceId) =>
               answerCurrent({ kind: 'choice-answer', chosenChoiceId: choiceId })
             }
@@ -73,9 +71,7 @@ export function App() {
         ) : (
           <NumericQuestionScreen
             question={task}
-            evaluation={
-              evaluation !== null && evaluation.kind === 'numeric-question' ? evaluation : null
-            }
+            evaluation={evaluationOfKind(evaluation, 'numeric-question')}
             onAnswer={answerCurrent}
             onNext={goNext}
           />
