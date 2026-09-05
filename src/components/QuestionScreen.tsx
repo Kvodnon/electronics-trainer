@@ -1,10 +1,16 @@
+import type { ReactNode } from 'react';
 import type { ChoiceQuestionEvaluation } from '../domain/evaluate';
 import type { ChoiceQuestion } from '../domain/task';
+
+type ChipTone = 'correct' | 'incorrect' | 'chosen';
+
+function Chip({ tone, children }: { tone: ChipTone; children: ReactNode }) {
+  return <span className={`chip chip-${tone}`}>{children}</span>;
+}
 
 interface QuestionScreenProps {
   question: ChoiceQuestion;
   evaluation: ChoiceQuestionEvaluation | null;
-  chosenChoiceId: string | null;
   onAnswer: (choiceId: string) => void;
   onNext: () => void;
 }
@@ -13,13 +19,7 @@ interface QuestionScreenProps {
  * Экран Вопроса с выбором варианта: тонкий слой над доменом —
  * рендерит Задание и вердикт `evaluate`, вся логика проверки в домене.
  */
-export function QuestionScreen({
-  question,
-  evaluation,
-  chosenChoiceId,
-  onAnswer,
-  onNext,
-}: QuestionScreenProps) {
+export function QuestionScreen({ question, evaluation, onAnswer, onNext }: QuestionScreenProps) {
   const answered = evaluation !== null;
   const reviewByChoice = new Map(evaluation?.reviews.map((r) => [r.choiceId, r]) ?? []);
   const correctReview = evaluation?.reviews.find((r) => r.isCorrect) ?? null;
@@ -34,7 +34,7 @@ export function QuestionScreen({
       <ul className="choices">
         {question.choices.map((choice) => {
           const review = reviewByChoice.get(choice.id);
-          const isChosen = choice.id === chosenChoiceId;
+          const isChosen = choice.id === evaluation?.chosenChoiceId;
           const state = !answered
             ? 'idle'
             : isChosen && review?.isCorrect
@@ -53,11 +53,11 @@ export function QuestionScreen({
                 onClick={() => onAnswer(choice.id)}
               >
                 <span className="choice-text">{choice.text}</span>
-                {answered && isChosen && <span className="chip chip-chosen">ваш ответ</span>}
+                {answered && isChosen && <Chip tone="chosen">ваш ответ</Chip>}
                 {answered && review && (
-                  <span className={`chip ${review.isCorrect ? 'chip-correct' : 'chip-incorrect'}`}>
+                  <Chip tone={review.isCorrect ? 'correct' : 'incorrect'}>
                     {review.isCorrect ? 'верно' : 'неверно'}
-                  </span>
+                  </Chip>
                 )}
               </button>
             </li>
@@ -65,7 +65,7 @@ export function QuestionScreen({
         })}
       </ul>
 
-      {answered && evaluation && (
+      {evaluation && (
         <>
           <p role="status" className={`verdict verdict-${evaluation.outcome}`}>
             <span className="verdict-word">
@@ -85,21 +85,19 @@ export function QuestionScreen({
                 <li
                   key={review.choiceId}
                   className={`review review-${review.isCorrect ? 'correct' : 'incorrect'} ${
-                    review.choiceId === chosenChoiceId ? 'review-chosen' : ''
+                    review.choiceId === evaluation.chosenChoiceId ? 'review-chosen' : ''
                   }`}
                 >
                   <div className="review-head">
-                    <span
-                      className={`chip ${review.isCorrect ? 'chip-correct' : 'chip-incorrect'}`}
-                    >
+                    <Chip tone={review.isCorrect ? 'correct' : 'incorrect'}>
                       {review.isCorrect ? 'верно' : 'неверно'}
-                    </span>
+                    </Chip>
                     <h4 className="review-choice">{review.text}</h4>
-                    {review.choiceId === chosenChoiceId && (
-                      <span className="chip chip-chosen">ваш ответ</span>
+                    {review.choiceId === evaluation.chosenChoiceId && (
+                      <Chip tone="chosen">ваш ответ</Chip>
                     )}
                   </div>
-                  <p className="review-explanation">{review.explanation}</p>
+                  <p className="review-explanation">{review.razbor}</p>
                 </li>
               ))}
             </ul>

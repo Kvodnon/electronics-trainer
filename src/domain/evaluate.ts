@@ -14,12 +14,14 @@ export interface ChoiceReview {
   readonly choiceId: ChoiceId;
   readonly text: string;
   readonly isCorrect: boolean;
-  readonly explanation: string;
+  readonly razbor: string;
 }
 
 /** Вердикт проверки Ответа на Вопрос с выбором. */
 export interface ChoiceQuestionEvaluation {
   readonly outcome: 'correct' | 'incorrect';
+  /** Вариант, который был выбран Ответом. */
+  readonly chosenChoiceId: ChoiceId;
   /** Разбор к каждому варианту, не только к выбранному. */
   readonly reviews: readonly ChoiceReview[];
 }
@@ -37,11 +39,12 @@ export function evaluate(
     choiceId: choice.id,
     text: choice.text,
     isCorrect: choice.id === question.correctChoiceId,
-    explanation: choice.explanation,
+    razbor: choice.razbor,
   }));
 
   return {
     outcome: chosen.id === question.correctChoiceId ? 'correct' : 'incorrect',
+    chosenChoiceId: chosen.id,
     reviews,
   };
 }

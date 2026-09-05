@@ -8,13 +8,13 @@ export type ChoiceId = string;
 
 /**
  * Вариант ответа Вопроса с выбором.
- * `explanation` — Разбор: для верного варианта — почему он верен,
+ * `razbor` — Разбор: для верного варианта — почему он верен,
  * для неверного — какая ошибка мышления за ним стоит.
  */
 export interface Choice {
   readonly id: ChoiceId;
   readonly text: string;
-  readonly explanation: string;
+  readonly razbor: string;
 }
 
 /**
@@ -28,6 +28,3 @@ export interface ChoiceQuestion {
   readonly choices: readonly Choice[];
   readonly correctChoiceId: ChoiceId;
 }
-
-/** Задание — единица работы ученика внутри Модуля. */
-export type Task = ChoiceQuestion;

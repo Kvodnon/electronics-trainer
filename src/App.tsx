@@ -45,7 +45,6 @@ export function App() {
           <QuestionScreen
             question={demoQuestion}
             evaluation={evaluation}
-            chosenChoiceId={answer?.chosenChoiceId ?? null}
             onAnswer={(choiceId) => setAnswer({ chosenChoiceId: choiceId })}
             onNext={() => setFinished(true)}
           />
