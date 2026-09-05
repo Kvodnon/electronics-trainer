@@ -3,22 +3,29 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { NumericQuestionScreen } from './NumericQuestionScreen';
-import { demoNumericQuestion } from '../content/demo';
+import { module1 } from '../content/m1';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import type { NumericAnswer } from '../domain/evaluate';
+import type { NumericQuestion } from '../domain/task';
 
 // Тест идёт по потоку числового Вопроса: ввод → вердикт → решение/Разбор.
 // Домен не мокается, используются настоящие данные приложения.
+
+const числовой = module1.tasks.find(
+  (задача): задача is NumericQuestion => задача.kind === 'numeric-question',
+);
+if (!числовой) throw new Error('фикстура: в М1 ожидается числовой Вопрос');
+const вопрос = числовой;
 
 /** Экран с настоящим Заданием и подключённым состоянием Ответа. */
 function ЭкранВопроса() {
   const [answer, setAnswer] = useState<NumericAnswer | null>(null);
   const [пройден, setПройден] = useState(false);
-  const evaluation = answer ? evaluate(demoNumericQuestion, answer) : null;
+  const evaluation = answer ? evaluate(вопрос, answer) : null;
   if (пройден) return <p>Вопрос завершён</p>;
   return (
     <NumericQuestionScreen
-      question={demoNumericQuestion}
+      question={вопрос}
       evaluation={evaluationOfKind(evaluation, 'numeric-question')}
       onAnswer={setAnswer}
       onNext={() => setПройден(true)}

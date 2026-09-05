@@ -4,4 +4,6 @@ import { afterEach } from 'vitest';
 
 afterEach(() => {
   cleanup();
+  // Тренажёр сохраняет Прогресс в localStorage — тесты изолируем с чистого листа.
+  window.localStorage.clear();
 });

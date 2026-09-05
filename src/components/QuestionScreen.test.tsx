@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { App } from '../App';
+import { войтиВЗаданияМодуля1 } from '../testing/navigation';
 
 // Тест идёт по потоку Вопроса: ответ → Разбор → следующий.
 // Домен не мокается, используются настоящие данные приложения.
@@ -10,6 +11,7 @@ describe('Вопрос с выбором варианта: поток от от�
   it('клик по неверному варианту → вердикт «Неверно» и Разбор к каждому варианту', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await войтиВЗаданияМодуля1(user);
 
     await user.click(screen.getByRole('button', { name: 'Ток уменьшится вдвое' }));
 
@@ -31,39 +33,42 @@ describe('Вопрос с выбором варианта: поток от от�
     const разборУдвоится = разборы.find((элемент) =>
       within(элемент).queryByText('Ток удвоится'),
     );
-    expect(разборУдвоится!).toHaveTextContent(/18 мА/);
+    expect(разборУдвоится).toHaveTextContent(/18 мА/);
 
     const разборНеИзменится = разборы.find((элемент) =>
       within(элемент).queryByText('Ток не изменится'),
     );
-    expect(разборНеИзменится!).toHaveTextContent(/свойство самой цепи/);
+    expect(разборНеИзменится).toHaveTextContent(/свойство самой цепи/);
 
     const разборВчетверо = разборы.find((элемент) =>
       within(элемент).queryByText('Ток увеличится вчетверо'),
     );
-    expect(разборВчетверо!).toHaveTextContent(/P = U² \/ R/);
+    expect(разборВчетверо).toHaveTextContent(/P = U² \/ R/);
   });
 
-  it('верный ответ → вердикт «Верно», «Дальше» ведёт к числовому Вопросу и далее к финалу', async () => {
+  it('верный ответ → «Дальше» ведёт к числовому Вопросу, затем Модуль завершается', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await войтиВЗаданияМодуля1(user);
 
     await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
 
     expect(screen.getByText('Верно')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    // Второе Задание последовательности — числовой Вопрос
+    // Второе Задание Модуля — числовой Вопрос
     expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
     await user.click(screen.getByRole('button', { name: 'Ответить' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    expect(screen.getByText('Демонстрационные Задания пройдены')).toBeInTheDocument();
+    // Все Задания Модуля закрыты
+    expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Пройти ещё раз' }));
-    expect(screen.getByRole('button', { name: 'Ток удвоится' })).toBeEnabled();
-    expect(screen.queryByText('Верно')).not.toBeInTheDocument();
+    // Возврат к Курсу: следующий Модуль разблокирован
+    await user.click(screen.getByRole('button', { name: 'К списку Модулей' }));
+    expect(screen.getByText('Пройден')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
   });
 });

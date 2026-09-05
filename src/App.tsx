@@ -1,44 +1,28 @@
-import { useMemo, useState } from 'react';
-import { QuestionScreen } from './components/QuestionScreen';
-import { NumericQuestionScreen } from './components/NumericQuestionScreen';
-import { demoTasks } from './content/demo';
-import { evaluate, evaluationOfKind } from './domain/evaluate';
-import type { Answer } from './domain/evaluate';
+import { useEffect, useReducer, useState } from 'react';
+import { CourseScreen } from './components/CourseScreen';
+import { ModuleScreen } from './components/ModuleScreen';
+import { course } from './content/course';
+import { emptyProgress, progressReducer } from './domain/course';
+import { loadProgress, saveProgress } from './storage/progressStorage';
 
 /**
- * Каркас Тренажёра. Пока — два демонстрационных Задания подряд;
- * Курс из Модулей (тикет 03) вырастет вокруг этого луча.
+ * Каркас Тренажёра: экран Курса ↔ экран Модуля (Теория → Задания).
+ * Прогресс живёт в редьюсере домена и автоматически сохраняется
+ * между сессиями — перезагрузка страницы ничего не теряет.
  */
 export function App() {
-  const [taskIndex, setTaskIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, Answer>>({});
-  const [finished, setFinished] = useState(false);
+  const [progress, dispatch] = useReducer(progressReducer, null, () => {
+    const сохранённый = loadProgress();
+    return сохранённый ?? emptyProgress;
+  });
+  const [moduleId, setModuleId] = useState<string | null>(null);
 
-  const task = demoTasks[taskIndex];
-  const answer = task ? answers[task.id] : undefined;
-  const evaluation = useMemo(
-    () => (task && answer ? evaluate(task, answer) : null),
-    [task, answer],
-  );
+  useEffect(() => {
+    saveProgress(progress);
+  }, [progress]);
 
-  function answerCurrent(next: Answer) {
-    if (!task) return;
-    setAnswers((prev) => ({ ...prev, [task.id]: next }));
-  }
-
-  function goNext() {
-    if (taskIndex + 1 >= demoTasks.length) {
-      setFinished(true);
-    } else {
-      setTaskIndex((index) => index + 1);
-    }
-  }
-
-  function restart() {
-    setTaskIndex(0);
-    setAnswers({});
-    setFinished(false);
-  }
+  const module =
+    moduleId === null ? null : (course.modules.find((м) => м.id === moduleId) ?? null);
 
   return (
     <div className="app">
@@ -48,33 +32,16 @@ export function App() {
       </header>
 
       <main>
-        {finished || !task ? (
-          <section className="panel done" aria-labelledby="done-heading">
-            <h2 id="done-heading">Демонстрационные Задания пройдены</h2>
-            <p>
-              Дальше здесь появится Курс из Модулей с Теорией, Вопросами и Схема-заданиями —
-              каркас уже готов их принимать.
-            </p>
-            <button type="button" className="button-primary" onClick={restart}>
-              Пройти ещё раз
-            </button>
-          </section>
-        ) : task.kind === 'choice-question' ? (
-          <QuestionScreen
-            question={task}
-            evaluation={evaluationOfKind(evaluation, 'choice-question')}
-            onAnswer={(choiceId) =>
-              answerCurrent({ kind: 'choice-answer', chosenChoiceId: choiceId })
-            }
-            onNext={goNext}
+        {module ? (
+          <ModuleScreen
+            key={module.id}
+            module={module}
+            progress={progress}
+            onProgressAction={dispatch}
+            onExit={() => setModuleId(null)}
           />
         ) : (
-          <NumericQuestionScreen
-            question={task}
-            evaluation={evaluationOfKind(evaluation, 'numeric-question')}
-            onAnswer={answerCurrent}
-            onNext={goNext}
-          />
+          <CourseScreen course={course} progress={progress} onEnterModule={setModuleId} />
         )}
       </main>
     </div>

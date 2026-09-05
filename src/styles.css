@@ -412,3 +412,219 @@ body {
   color: var(--text-muted);
   line-height: 1.55;
 }
+
+/* Экран Курса */
+
+.course h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+
+.course-subtitle {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.module-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.module-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+}
+
+.module-card-locked {
+  opacity: 0.65;
+}
+
+.module-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.module-index {
+  margin: 0;
+  color: var(--accent);
+  font-family: var(--monospace);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.module-title {
+  margin: 0;
+  font-size: 19px;
+}
+
+.module-summary {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-size: 15px;
+}
+
+.module-progress {
+  margin: 0 0 16px;
+  color: var(--text);
+  font-family: var(--monospace);
+  font-size: 13px;
+}
+
+.module-progress-retry {
+  color: var(--accent);
+}
+
+.module-lock-hint {
+  margin: -6px 0 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.module-card .button-primary:disabled {
+  border-color: var(--border-strong);
+  background: var(--panel-raised);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+/* Экран Модуля */
+
+.module-header {
+  margin-bottom: 20px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.module-header .module-progress {
+  margin: 0;
+  margin-left: auto;
+}
+
+.link-back {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: var(--monospace);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.link-back:hover,
+.link-back:focus-visible {
+  color: var(--accent);
+  outline: none;
+  text-decoration: underline;
+}
+
+.module-header-title {
+  margin: 0;
+  font-size: 20px;
+}
+
+/* Карточка Теории */
+
+.theory-title {
+  margin: 0 0 16px;
+  font-size: 22px;
+  line-height: 1.35;
+}
+
+.theory-paragraph {
+  margin: 0 0 14px;
+  line-height: 1.6;
+  font-size: 16px;
+}
+
+.theory-formula {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 14px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel-raised);
+}
+
+.formula-expression {
+  font-family: var(--monospace);
+  font-size: 19px;
+  color: var(--accent);
+}
+
+.formula-caption {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+/* Обозначения двух стандартов */
+
+.symbol-comparison {
+  margin: 0 0 16px;
+}
+
+.symbol-name {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.symbol-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.symbol-figure {
+  margin: 0;
+  padding: 12px 14px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(21, 29, 40, 0.6);
+}
+
+.symbol-standard {
+  margin-bottom: 6px;
+  color: var(--accent);
+  font-family: var(--monospace);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.symbol-svg {
+  display: block;
+  width: 100%;
+  max-width: 240px;
+  margin: 0 auto;
+  height: auto;
+  color: var(--text);
+}
+
+.symbol-sign {
+  font-family: var(--monospace);
+  font-size: 11px;
+  fill: var(--text-muted);
+}
+
+.theory .button-primary {
+  margin-top: 4px;
+}
