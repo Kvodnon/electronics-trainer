@@ -80,6 +80,10 @@ export function evaluate(task: Task, answer: Answer): Evaluation {
   if (task.kind === 'numeric-question' && answer.kind === 'numeric-answer') {
     return evaluateNumeric(task, answer);
   }
+  if (task.kind === 'circuit-task') {
+    // Симулятор и Диагнозы — тикет 05; Холст без проверки — тикет 04.
+    throw new Error('Проверка Схема-заданий появится вместе с Симулятором (тикет 05)');
+  }
   throw new Error(`Ответ вида «${answer.kind}» не подходит Заданию вида «${task.kind}»`);
 }
 

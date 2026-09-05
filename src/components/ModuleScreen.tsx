@@ -3,6 +3,7 @@ import { ComponentSymbol } from './ComponentSymbol';
 import { ModuleProgressLine, taskStateName } from './ModuleProgressLine';
 import { NumericQuestionScreen } from './NumericQuestionScreen';
 import { QuestionScreen } from './QuestionScreen';
+import { CircuitTaskScreen } from './canvas/CircuitTaskScreen';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import { moduleProgressOf, moduleTaskQueue, taskStateOf } from '../domain/course';
 import type { Answer } from '../domain/evaluate';
@@ -88,7 +89,7 @@ export function ModuleScreen({
             onAnswer={(choiceId) => setAnswer({ kind: 'choice-answer', chosenChoiceId: choiceId })}
             onNext={goNext}
           />
-        ) : (
+        ) : currentTask.kind === 'numeric-question' ? (
           <NumericQuestionScreen
             key={`${currentTask.id}:${step}`}
             question={currentTask}
@@ -96,6 +97,10 @@ export function ModuleScreen({
             onAnswer={setAnswer}
             onNext={goNext}
           />
+        ) : (
+          // Схема-задание: проверки пока нет (Симулятор — тикет 05),
+          // Холст собирается и сбрасывается; Задание не завершается.
+          <CircuitTaskScreen key={`${currentTask.id}:${step}`} task={currentTask} />
         )
       ) : (
         <section className="panel done" aria-labelledby="module-done-heading">

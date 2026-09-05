@@ -130,4 +130,16 @@ describe('evaluate: числовой Вопрос', () => {
     expect(() => evaluate(numericQuestion, { kind: 'choice-answer', chosenChoiceId: 'v' })).toThrow();
     expect(() => evaluate(question, { kind: 'numeric-answer', value: 1 })).toThrow();
   });
+
+  it('Схема-задание честно сообщает, что проверка появится с Симулятором (тикет 05)', () => {
+    const circuitTask = {
+      kind: 'circuit-task',
+      id: 'demo',
+      prompt: 'Соберите цепь',
+      palette: ['battery', 'lamp'],
+    } as const;
+    expect(() => evaluate(circuitTask, { kind: 'choice-answer', chosenChoiceId: 'v' })).toThrow(
+      /Симулятором/,
+    );
+  });
 });

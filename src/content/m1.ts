@@ -1,4 +1,18 @@
+import type { ComponentKind } from '../domain/canvas';
 import type { CourseModule } from '../domain/course';
+
+/**
+ * Палитра М1: Компоненты, открываемые первым Модулем. Растёт вместе
+ * с Модулями (см. spec: «Палитра, растущая вместе с Модулями»).
+ */
+export const module1Palette: readonly ComponentKind[] = [
+  'battery',
+  'resistor',
+  'lamp',
+  'switch',
+  'pushbutton',
+  'motor',
+];
 
 /**
  * М1 «Основы DC» — стартовое наполнение каркаса (тикет 03).

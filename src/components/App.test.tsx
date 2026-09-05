@@ -15,9 +15,8 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю
-    expect(screen.getByText('Заданий пройдено: 0 из 2')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 1')).toBeInTheDocument();
+    // Прогресс по каждому Модулю: в М1 и М2 по два Задания
+    expect(screen.getAllByText('Заданий пройдено: 0 из 2')).toHaveLength(2);
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();

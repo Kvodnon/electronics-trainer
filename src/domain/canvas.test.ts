@@ -1,0 +1,332 @@
+import { describe, expect, it } from 'vitest';
+import {
+  canvasReducer,
+  defaultValuesOf,
+  emptyHistory,
+  suggestPlacementPosition,
+  type CanvasHistory,
+  type ComponentKind,
+} from './canvas';
+
+/**
+ * Редьюсер Холста — второй шов домена (см. spec: Testing Decisions):
+ * каждое действие редактора проверяется на поведение, не на устройство.
+ * Координаты — логические пиксели Холста, сетка 20.
+ */
+
+/** История с поставленными на Холст Компонентами — база для следующих действий. */
+function historyWithPlaced(
+  kinds: readonly ComponentKind[],
+  coordinates: readonly [number, number][] = [],
+): CanvasHistory {
+  let history = emptyHistory;
+  kinds.forEach((kind, index) => {
+    const [x, y] = coordinates[index] ?? [100 + index * 120, 100];
+    history = canvasReducer(history, { type: 'component-placed', kind, x, y });
+  });
+  return history;
+}
+
+describe('Холст: расстановка Компонентов', () => {
+  it('Компонент из Палитры ставится на Холст с номиналом по умолчанию и привязкой к сетке', () => {
+    const next = canvasReducer(emptyHistory, {
+      type: 'component-placed',
+      kind: 'battery',
+      x: 133,
+      y: 89,
+    });
+
+    expect(next.present.components).toHaveLength(1);
+    const placed = next.present.components[0];
+    expect(placed.kind).toBe('battery');
+    expect(placed.x).toBe(140); // 133 → ближайший узел сетки
+    expect(placed.y).toBe(80);
+    expect(placed.rotation).toBe(0);
+    expect(placed.voltage).toBe(9); // В по умолчанию
+  });
+
+  it('У каждого вида — свой номинал по умолчанию: резистор 1 кОм, лампа и мотор — сопротивление, выключатель и ключ — разомкнуты', () => {
+    const kinds = ['resistor', 'lamp', 'motor', 'switch', 'pushbutton'] as const;
+    let history = emptyHistory;
+    for (const kind of kinds) {
+      history = canvasReducer(history, { type: 'component-placed', kind, x: 100, y: 100 });
+    }
+
+    const byKind = new Map(history.present.components.map((c) => [c.kind, c]));
+    expect(byKind.get('resistor')?.resistance).toBe(1000);
+    expect(byKind.get('lamp')?.resistance).toBe(120);
+    expect(byKind.get('motor')?.resistance).toBe(50);
+    expect(byKind.get('switch')?.closed).toBe(false);
+    expect(byKind.get('pushbutton')?.closed).toBe(false);
+  });
+
+  it('Идентификаторы назначаются редьюсером и не повторяются', () => {
+    let history = emptyHistory;
+    history = canvasReducer(history, { type: 'component-placed', kind: 'battery', x: 60, y: 60 });
+    history = canvasReducer(history, { type: 'component-placed', kind: 'resistor', x: 200, y: 60 });
+
+    const ids = history.present.components.map((c) => c.id);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('Компонент не ставится и не переезжает за границы Холста', () => {
+    let history = canvasReducer(emptyHistory, { type: 'component-placed', kind: 'battery', x: -60, y: 40 });
+    expect(history.present.components[0]).toMatchObject({ x: 40, y: 40 });
+
+    history = canvasReducer(history, { type: 'component-moved', componentId: 'c1', x: 9000, y: -9000 });
+    expect(history.present.components[0]).toMatchObject({ x: 760, y: 40 });
+  });
+
+  it('Клик по Палитре предлагает свободное место: построчный обход, занятые клетки пропускаются', () => {
+    let history = emptyHistory;
+    for (const [x, y] of [[100, 100], [220, 100]] as const) {
+      history = canvasReducer(history, { type: 'component-placed', kind: 'resistor', x, y });
+    }
+
+    // Первая позиция ряда занята — предлагаем следующую свободную
+    expect(suggestPlacementPosition(history.present)).toEqual({ x: 340, y: 100 });
+  });
+
+  it('Номиналы по умолчанию доступны и для Палитры', () => {
+    expect(defaultValuesOf('battery')).toEqual({ voltage: 9 });
+    expect(defaultValuesOf('switch')).toEqual({ closed: false });
+  });
+});
+
+describe('Холст: перемещение Компонентов', () => {
+  it('Перемещение меняет позицию с привязкой к сетке; Провод сохраняет соединение', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    history = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 1 },
+      to: { componentId: 'c2', pin: 0 },
+    });
+    history = canvasReducer(history, { type: 'component-moved', componentId: 'c2', x: 331, y: 269 });
+
+    const moved = history.present.components.find((c) => c.id === 'c2');
+    expect(moved?.x).toBe(340);
+    expect(moved?.y).toBe(260);
+    // Соединение не рвётся: Провод по-прежнему ссылается на те же выводы
+    expect(history.present.wires).toHaveLength(1);
+    expect(history.present.wires[0].from).toEqual({ componentId: 'c1', pin: 1 });
+    expect(history.present.wires[0].to).toEqual({ componentId: 'c2', pin: 0 });
+  });
+
+  it('Перемещение неизвестного Компонента — состояние без изменений', () => {
+    const history = historyWithPlaced(['battery']);
+    const next = canvasReducer(history, { type: 'component-moved', componentId: 'нет-такого', x: 0, y: 0 });
+    expect(next).toBe(history);
+  });
+});
+
+describe('Холст: поворот и удаление', () => {
+  it('Поворот шагает по 90° по часовой и заворачивает обратно к 0°', () => {
+    let history = historyWithPlaced(['resistor']);
+    for (const rotation of [90, 180, 270, 0]) {
+      history = canvasReducer(history, { type: 'component-rotated', componentId: 'c1' });
+      expect(history.present.components[0].rotation).toBe(rotation);
+    }
+  });
+
+  it('Удаление Компонента убирает и все его Провода; цепи без него живут', () => {
+    // батарея — ключ — лампочка, параллельно батарея — резистор
+    let history = historyWithPlaced(['battery', 'pushbutton', 'lamp', 'resistor']);
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c2', pin: 1 }, to: { componentId: 'c3', pin: 0 } });
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 0 }, to: { componentId: 'c4', pin: 1 } });
+    expect(history.present.wires).toHaveLength(3);
+
+    history = canvasReducer(history, { type: 'component-removed', componentId: 'c2' });
+
+    expect(history.present.components.map((c) => c.id)).toEqual(['c1', 'c3', 'c4']);
+    // Оба Провода ключа исчезли вместе с ним; Провод резистора уцелел
+    expect(history.present.wires).toHaveLength(1);
+    expect(history.present.wires[0].to).toEqual({ componentId: 'c4', pin: 1 });
+  });
+
+  it('Поворот и удаление неизвестного Компонента — состояние без изменений', () => {
+    const history = historyWithPlaced(['battery']);
+    expect(canvasReducer(history, { type: 'component-rotated', componentId: 'x' })).toBe(history);
+    expect(canvasReducer(history, { type: 'component-removed', componentId: 'x' })).toBe(history);
+  });
+});
+
+describe('Холст: номиналы Компонентов', () => {
+  it('Напряжение батареи и сопротивление резистора правятся; остальные поля не трогаются', () => {
+    let history = historyWithPlaced(['battery', 'resistor']);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 12 } });
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { resistance: 2200 } });
+
+    const battery = history.present.components.find((c) => c.id === 'c1');
+    const resistor = history.present.components.find((c) => c.id === 'c2');
+    expect(battery?.voltage).toBe(12);
+    expect(resistor?.resistance).toBe(2200);
+  });
+
+  it('Выключатель замыкается и размыкается правкой closed', () => {
+    let history = historyWithPlaced(['switch']);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { closed: true } });
+    expect(history.present.components[0].closed).toBe(true);
+
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { closed: false } });
+    expect(history.present.components[0].closed).toBe(false);
+  });
+
+  it('Отрицательные и нечисловые номиналы отклоняются; неизвестный Компонент — без изменений', () => {
+    const history = historyWithPlaced(['battery']);
+    const negative = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: -3 } });
+    const notANumber = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: Number.NaN } });
+    const unknown = canvasReducer(history, { type: 'component-value-set', componentId: 'x', patch: { voltage: 5 } });
+    expect(negative).toBe(history);
+    expect(notANumber).toBe(history);
+    expect(unknown).toBe(history);
+  });
+});
+
+describe('Холст: undo/redo и сброс', () => {
+  it('Отмена возвращает каждое действие редактора — по одному шагу', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+    history = canvasReducer(history, { type: 'component-rotated', componentId: 'c2' });
+    history = canvasReducer(history, { type: 'component-moved', componentId: 'c2', x: 300, y: 200 });
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 4.5 } });
+
+    // Пять действий — пять отмен, каждая точна
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.components.find((c) => c.id === 'c1')?.voltage).toBe(9);
+
+    history = canvasReducer(history, { type: 'undo' });
+    const lamp = history.present.components.find((c) => c.id === 'c2');
+    expect(lamp?.x).toBe(220);
+    expect(lamp?.y).toBe(100);
+
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.components.find((c) => c.id === 'c2')?.rotation).toBe(0);
+
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.wires).toHaveLength(0);
+
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.components).toHaveLength(1);
+
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.components).toHaveLength(0);
+
+    // Отменять больше нечего — состояние то же
+    const exhausted = canvasReducer(history, { type: 'undo' });
+    expect(exhausted).toBe(history);
+  });
+
+  it('Возврат повторяет отменённое; новое действие стирает ветку возврата', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    history = canvasReducer(history, { type: 'component-removed', componentId: 'c2' });
+    history = canvasReducer(history, { type: 'undo' });
+    history = canvasReducer(history, { type: 'redo' });
+    expect(history.present.components).toHaveLength(1);
+
+    history = canvasReducer(history, { type: 'undo' });
+    history = canvasReducer(history, { type: 'component-placed', kind: 'switch', x: 400, y: 300 });
+    // После нового действия redo больше не доступен
+    const noFuture = canvasReducer(history, { type: 'redo' });
+    expect(noFuture).toBe(history);
+  });
+
+  it('Сброс очищает Холст и сам отменяется', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+
+    history = canvasReducer(history, { type: 'canvas-reset' });
+    expect(history.present.components).toHaveLength(0);
+    expect(history.present.wires).toHaveLength(0);
+
+    history = canvasReducer(history, { type: 'undo' });
+    expect(history.present.components).toHaveLength(2);
+    expect(history.present.wires).toHaveLength(1);
+  });
+});
+
+describe('Холст: сериализация', () => {
+  it('Состояние Холста проходит через JSON туда-обратно без потерь', () => {
+    let history = historyWithPlaced(
+      ['battery', 'switch', 'lamp', 'motor'],
+      [
+        [80, 100],
+        [240, 100],
+        [400, 100],
+        [560, 100],
+      ],
+    );
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c2', pin: 1 }, to: { componentId: 'c3', pin: 0 } });
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 4.5 } });
+    history = canvasReducer(history, { type: 'component-rotated', componentId: 'c4' });
+
+    const restored: typeof history.present = JSON.parse(JSON.stringify(history.present));
+    expect(restored).toEqual(history.present);
+  });
+});
+
+describe('Холст: Провода', () => {
+  it('Провод соединяет два вывода разных Компонентов; направление записи неважно', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    history = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 1 },
+      to: { componentId: 'c2', pin: 0 },
+    });
+    history = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c2', pin: 0 },
+      to: { componentId: 'c1', pin: 1 },
+    });
+
+    // Повторное соединение тех же выводов (в любую сторону) не создаёт второй Провод
+    expect(history.present.wires).toHaveLength(1);
+    expect(history.present.wires[0].from).toEqual({ componentId: 'c1', pin: 1 });
+    expect(history.present.wires[0].to).toEqual({ componentId: 'c2', pin: 0 });
+  });
+
+  it('Один вывод может нести несколько Проводов — параллельные ветви собираются', () => {
+    let history = historyWithPlaced(['battery', 'lamp', 'resistor']);
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c3', pin: 0 } });
+
+    expect(history.present.wires).toHaveLength(2);
+  });
+
+  it('Провод сам на себя и на несуществующий вывод не протягивается', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
+    const selfLoop = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 0 },
+      to: { componentId: 'c1', pin: 0 },
+    });
+    expect(selfLoop).toBe(history);
+
+    const missingPin = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 0 },
+      to: { componentId: 'c2', pin: 7 },
+    });
+    expect(missingPin).toBe(history);
+
+    const missingComponent = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 0 },
+      to: { componentId: 'нет', pin: 0 },
+    });
+    expect(missingComponent).toBe(history);
+  });
+
+  it('Удаление Провода разрывает только его', () => {
+    let history = historyWithPlaced(['battery', 'lamp', 'resistor']);
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
+    history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c3', pin: 0 } });
+
+    history = canvasReducer(history, { type: 'wire-removed', wireId: 'w1' });
+
+    expect(history.present.wires).toHaveLength(1);
+    expect(history.present.wires[0].to).toEqual({ componentId: 'c3', pin: 0 });
+    expect(canvasReducer(history, { type: 'wire-removed', wireId: 'нет' })).toBe(history);
+  });
+});

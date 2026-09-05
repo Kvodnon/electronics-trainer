@@ -3,6 +3,7 @@
  * Термины — по CONTEXT.md: Задание, Вопрос, Разбор.
  */
 import type { QuantityUnit } from './quantity';
+import type { ComponentKind } from './canvas';
 
 /** Идентификатор Варианта ответа. Уникален внутри одного Вопроса. */
 export type ChoiceId = string;
@@ -48,5 +49,19 @@ export interface NumericQuestion {
   readonly solutionSteps: readonly string[];
 }
 
+/**
+ * Схема-задание: ученик собирает схему из Компонентов на Холсте; проверяется
+ * Симулятором по измерениям, а не по совпадению с эталоном. Условия-измерения
+ * и Диагнозы приходят вместе с Симулятором (тикет 05); Холст для сборки —
+ * уже в тикете 04.
+ */
+export interface CircuitTask {
+  readonly kind: 'circuit-task';
+  readonly id: string;
+  readonly prompt: string;
+  /** Палитра Задания: Компоненты, доступные ученику на Холсте. */
+  readonly palette: readonly ComponentKind[];
+}
+
 /** Задание — единица работы ученика; виды добавляются по мере Модулей. */
-export type Task = ChoiceQuestion | NumericQuestion;
+export type Task = ChoiceQuestion | NumericQuestion | CircuitTask;

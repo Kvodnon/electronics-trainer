@@ -667,3 +667,279 @@ body {
 .theory .button-primary {
   margin-top: 4px;
 }
+
+/* Схема-задание: Холст */
+
+.canvas-editor {
+  outline: none;
+}
+
+.canvas-editor:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.palette-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 108px;
+  padding: 8px 6px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-raised);
+  color: var(--text);
+  cursor: grab;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.palette-item:hover,
+.palette-item:focus-visible {
+  border-color: var(--accent-dim);
+  background: #1a2432;
+}
+
+.palette-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.palette-item:active {
+  cursor: grabbing;
+}
+
+.palette-symbol {
+  width: 84px;
+  height: 52px;
+  color: var(--text);
+}
+
+.palette-item-name {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.button-secondary {
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-size: 13px;
+  font-family: var(--sans);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.button-secondary:hover:not(:disabled),
+.button-secondary:focus-visible:not(:disabled) {
+  border-color: var(--accent-dim);
+  background: #1a2432;
+}
+
+.button-secondary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.button-danger:not(:disabled) {
+  border-color: #6b3040;
+  color: #ff9a9a;
+}
+
+.button-danger:hover:not(:disabled) {
+  border-color: var(--incorrect);
+  background: #2a161d;
+}
+
+.canvas-toolbar-hint {
+  color: var(--text-muted);
+  font-family: var(--monospace);
+  font-size: 12px;
+}
+
+.canvas-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #0d141c;
+  touch-action: none;
+  user-select: none;
+}
+
+.canvas-grid-line {
+  fill: none;
+  stroke: rgba(61, 220, 151, 0.05);
+  stroke-width: 1;
+}
+
+.canvas-hit {
+  cursor: default;
+}
+
+.canvas-component {
+  cursor: grab;
+  color: var(--text);
+}
+
+.canvas-component:active {
+  cursor: grabbing;
+}
+
+.canvas-component-hit {
+  fill: transparent;
+}
+
+.canvas-component-selected {
+  color: var(--accent);
+}
+
+.canvas-component-dragged {
+  opacity: 0.85;
+}
+
+.canvas-label {
+  font-family: var(--monospace);
+  font-size: 12px;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.canvas-motor-sign {
+  font-family: var(--monospace);
+  font-size: 18px;
+  fill: currentColor;
+}
+
+.canvas-pin {
+  fill: #0d141c;
+  stroke: var(--accent);
+  stroke-width: 2;
+  cursor: crosshair;
+}
+
+.canvas-pin:hover,
+.canvas-pin-source {
+  fill: var(--accent);
+}
+
+.wire-line {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.wire-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  cursor: pointer;
+}
+
+.wire:hover .wire-line {
+  stroke: var(--accent);
+}
+
+.wire-selected .wire-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.wire-draft {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.canvas-selection {
+  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--panel-raised);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.canvas-selection-name {
+  margin: 0;
+  font-size: 15px;
+  min-width: 110px;
+}
+
+.canvas-selection-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.canvas-value-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.canvas-value-form label {
+  color: var(--text-muted);
+  font-family: var(--monospace);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.canvas-value-form .numeric-input-field {
+  width: 110px;
+  padding: 7px 10px;
+  font-size: 14px;
+}
+
+.canvas-value-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.canvas-value-toggle input {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.canvas-hint {
+  margin: 14px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
