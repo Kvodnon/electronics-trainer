@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ComponentValuePatch, LedColor, PlacedComponent } from '../../domain/canvas';
-import { ledColors, valueFieldOf } from '../../domain/canvas';
+import { defaultLedColor, ledColors, valueFieldOf } from '../../domain/canvas';
 import { parseQuantity, type QuantityUnit } from '../../domain/quantity';
 import { ledColorTitles } from './CanvasSymbols';
 
@@ -59,7 +59,7 @@ function ComponentValueForm({
       <label className="canvas-color-field">
         Цвет свечения
         <select
-          value={component.color ?? 'red'}
+          value={component.color ?? defaultLedColor}
           onChange={(event) => onApply({ color: event.target.value as LedColor })}
         >
           {ledColors.map((color) => (

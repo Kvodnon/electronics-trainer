@@ -166,6 +166,8 @@ interface ActiveTraits {
   readonly threshold: number;
   /** Глагол активного состояния. */
   readonly verb: string;
+  /** Как сказать про Компонент, что активным ему быть не положено. */
+  readonly inactiveNote: string;
   readonly isActive: (reading: ComponentReading) => boolean;
 }
 
@@ -177,6 +179,7 @@ const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
     valueName: 'мощность',
     threshold: LAMP_LIT_POWER,
     verb: 'горит',
+    inactiveNote: 'По условию лампочка активной быть не должна.',
     isActive: isLampLit,
   },
   motor: {
@@ -185,6 +188,7 @@ const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
     valueName: 'мощность',
     threshold: MOTOR_SPIN_POWER,
     verb: 'крутится',
+    inactiveNote: 'По условию моторчик не должен крутиться.',
     isActive: isMotorSpinning,
   },
   led: {
@@ -193,6 +197,7 @@ const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
     valueName: 'ток',
     threshold: LED_LIT_CURRENT,
     verb: 'светится',
+    inactiveNote: 'По условию светодиод не должен светиться.',
     isActive: isLedLit,
   },
 };
@@ -203,7 +208,8 @@ function checkComponentActive(
   condition: Extract<CircuitCondition, { kind: 'component-active' }>,
 ): ConditionCheck {
   const lexis = COMPONENT_LEXIS[condition.componentKind];
-  const { valueOf, unit, valueName, threshold, verb, isActive } = ACTIVE_TRAITS[condition.componentKind];
+  const { valueOf, unit, valueName, threshold, verb, inactiveNote, isActive } =
+    ACTIVE_TRAITS[condition.componentKind];
   const readings = readingsOfKind(solution, condition.componentKind);
 
   if (readings.length === 0) {
@@ -229,7 +235,7 @@ function checkComponentActive(
   return {
     condition,
     passed,
-    text: `${fact} По условию ${lexis.nominative} активной быть не должна.`,
+    text: `${fact} ${inactiveNote}`,
     componentId: candidate.componentId,
     measured: valueOf(candidate),
   };

@@ -31,6 +31,17 @@ function seedModule1Progress(except: readonly string[] = []): void {
   );
 }
 
+/** Отвечает на три Вопроса М2 (диод, ток светодиода, конденсатор) — очередь доходит до Схема-заданий. */
+async function passModule2Questions(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
+  await user.click(screen.getByRole('button', { name: 'Ответить' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+}
+
 describe('Экран Курса', () => {
   it('показывает Модули с Прогрессом; следующий lockedButton', () => {
     render(<App />);
@@ -247,19 +258,7 @@ describe('Схема-задание в потоке Курса', () => {
 
     await user.click(screen.getByRole('button', { name: 'Начать' }));
     await passTheory(user, 3);
-
-    // Вопрос про обратное включение светодиода
-    await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-
-    // Числовой Вопрос: ток светодиода через резистор
-    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
-    await user.click(screen.getByRole('button', { name: 'Ответить' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-
-    // Вопрос про конденсатор
-    await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await passModule2Questions(user);
 
     // «зажги светодиод»: светодиод с токоограничивающим резистором в прямом включении
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
@@ -306,13 +305,7 @@ describe('Стандарт обозначений между сессиями', 
     // М2: Теория → Вопросы → Схема-задание (проходим Вопросы очереди)
     await user.click(screen.getByRole('button', { name: 'Начать' }));
     await passTheory(user, 3);
-    await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
-    await user.click(screen.getByRole('button', { name: 'Ответить' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await passModule2Questions(user);
 
     // по умолчанию ГОСТ: батарея в Палитре — пластины, без круга
     const batterySymbol = () =>

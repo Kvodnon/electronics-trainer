@@ -29,6 +29,9 @@ export type LedColor = 'red' | 'yellow' | 'green' | 'blue';
 /** Все цвета светодиода в порядке карточки Теории. */
 export const ledColors: readonly LedColor[] = ['red', 'yellow', 'green', 'blue'];
 
+/** Цвет по умолчанию: постановка из Палитры и показания без явного цвета. */
+export const defaultLedColor: LedColor = 'red';
+
 /** Это цвет свечения светодиода? */
 export function isLedColor(value: unknown): value is LedColor {
   return typeof value === 'string' && (ledColors as readonly string[]).includes(value);

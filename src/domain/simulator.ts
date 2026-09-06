@@ -17,7 +17,7 @@
  * диода угадывается итеративно: схема решается, состояния поправляются, пока
  * не перестанут меняться.
  */
-import { pinKey, type CanvasState, type ComponentKind, type LedColor, type PlacedComponent } from './canvas';
+import { defaultLedColor, pinKey, type CanvasState, type ComponentKind, type LedColor, type PlacedComponent } from './canvas';
 
 /** Внутреннее сопротивление батареи, Ом (поведенческая модель М1). */
 export const BATTERY_INTERNAL_RESISTANCE = 0.1;
@@ -193,9 +193,9 @@ function isDiodeKind(kind: ComponentKind): boolean {
   return kind === 'diode' || kind === 'led';
 }
 
-/** Прямой порог диода по виду и цвету Компонента. */
-function forwardVoltageOf(component: PlacedComponent): number {
-  if (component.kind === 'led') return LED_FORWARD_VOLTAGE[component.color ?? 'red'];
+/** Прямой порог диода по виду и цвету Компонента; в Симуляторе и Диагнозах. */
+export function forwardVoltageOf(component: PlacedComponent): number {
+  if (component.kind === 'led') return LED_FORWARD_VOLTAGE[component.color ?? defaultLedColor];
   return DIODE_FORWARD_VOLTAGE;
 }
 

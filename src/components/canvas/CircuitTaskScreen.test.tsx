@@ -8,6 +8,7 @@ import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
 import { isExamTask } from '../../domain/course';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
+import { wireForwardDiode } from '../../testing/navigation';
 import { CircuitTaskScreen } from './CircuitTaskScreen';
 
 /**
@@ -418,12 +419,7 @@ describe('Кнопка «Проверить»', () => {
     expect(screen.getByText('Не пройдено')).toBeInTheDocument();
 
     // прямое включение: «плюс» батареи — на анод (вывод 1) светодиода
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Светодиод 3' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Светодиод 3' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 2' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 2' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await wireForwardDiode(user, ['Батарея 1', 'Светодиод 3', 'Резистор 2']);
 
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();

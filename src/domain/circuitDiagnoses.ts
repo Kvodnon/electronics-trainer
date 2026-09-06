@@ -6,11 +6,10 @@
  * по условию» — каждый Диагноз указывает место ошибки на схеме для подсветки.
  * Чистый TypeScript без DOM.
  */
-import type { CanvasState } from './canvas';
-import { pinKey } from './canvas';
+import { defaultLedColor, pinKey, type CanvasState } from './canvas';
 import { formatQuantity, formatQuantityRange } from './quantity';
-import { COMPONENT_LEXIS, cap } from './componentLexis';
-import { LED_MAX_CURRENT, readingsOfKind, type DcSolution } from './simulator';
+import { COMPONENT_LEXIS, LED_COLOR_GENITIVE, cap } from './componentLexis';
+import { LED_MAX_CURRENT, forwardVoltageOf, readingsOfKind, type DcSolution } from './simulator';
 import type { ConditionCheck } from './circuitConditions';
 
 /** Виды Диагнозов: фундаментальная ошибка или живая схема не по условию. */
@@ -19,6 +18,7 @@ export type CircuitDiagnosisKind =
   | 'open-circuit'
   | 'reversed-source'
   | 'reversed-diode'
+  | 'diode-below-threshold'
   | 'overcurrent'
   | 'works-not-per-task';
 
@@ -69,6 +69,7 @@ export function diagnoseCircuit(
     findShortCircuit(canvas, solution) ??
     findReversedSource(solution) ??
     findReversedDiode(solution) ??
+    findDiodeBelowThreshold(canvas, solution) ??
     findRatingOvercurrent(solution) ??
     findOpenCircuit(canvas, solution) ??
     findOvercurrent(conditionChecks) ??
@@ -149,6 +150,37 @@ function findReversedDiode(solution: DcSolution): CircuitDiagnosis | null {
       text:
         `${cap(lexis.nominative)} включён в обратную сторону: диод не проводит против своего ` +
         `направления, поэтому ${doesNotLight}. Разверните ${lexis.accusative} в цепи — выводы у него разные.`,
+      spot: { kind: 'component', id: reading.componentId },
+    };
+  }
+  return null;
+}
+
+/**
+ * Прямое напряжение на диоде не дотянуло до порога проводимости: контур
+ * замкнут, но диод ещё не открылся, тока нет. Без этого Диагноза такой контур
+ * выдавал бы себя за «обрыв», хотя разрыва в нём нет.
+ */
+function findDiodeBelowThreshold(canvas: CanvasState, solution: DcSolution): CircuitDiagnosis | null {
+  for (const reading of solution.readings) {
+    if (reading.kind !== 'diode' && reading.kind !== 'led') continue;
+    if (reading.voltage < REVERSED_BIAS_MIN_VOLTAGE) continue; // прямого смещения почти нет
+    const component = canvas.components.find((candidate) => candidate.id === reading.componentId);
+    if (component === undefined) continue;
+    const threshold = forwardVoltageOf(component);
+    if (reading.voltage >= threshold) continue; // порог достигнут — диод открылся бы
+    if (Math.abs(reading.current) >= DEAD_CURRENT) continue; // ток есть — диод открыт
+    const lexis = COMPONENT_LEXIS[reading.kind];
+    const thresholdName =
+      reading.kind === 'led'
+        ? `прямого порога ${LED_COLOR_GENITIVE[component.color ?? defaultLedColor]} светодиода`
+        : 'прямого порога диода';
+    return {
+      kind: 'diode-below-threshold',
+      text:
+        `${cap(lexis.nominative)} не открылся: напряжение на нём ${formatQuantity(reading.voltage, 'В')} — ` +
+        `ниже ${thresholdName} (${formatQuantity(threshold, 'В')}), поэтому диод не проводит и ток в цепи не идёт. ` +
+        'Поднимите напряжение источника.',
       spot: { kind: 'component', id: reading.componentId },
     };
   }

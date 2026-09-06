@@ -3,7 +3,7 @@
  * только в комментариях, UI-тексте и тестах (см. AGENTS.md: code style);
  * идентификаторы видов — английские данные домена.
  */
-import type { ComponentKind } from './canvas';
+import type { ComponentKind, LedColor } from './canvas';
 
 /** Формы имени вида Компонента: именительный, винительный и т.д. */
 export interface ComponentLexis {
@@ -23,6 +23,14 @@ export const COMPONENT_LEXIS: Record<ComponentKind, ComponentLexis> = {
   motor: { nominative: 'моторчик', accusative: 'моторчик', prepositional: 'моторчике', genitive: 'моторчика', genitivePlural: 'моторчиков' },
   diode: { nominative: 'диод', accusative: 'диод', prepositional: 'диоде', genitive: 'диода', genitivePlural: 'диодов' },
   led: { nominative: 'светодиод', accusative: 'светодиод', prepositional: 'светодиоде', genitive: 'светодиода', genitivePlural: 'светодиодов' },
+};
+
+/** Родительный падеж цвета свечения — для строк Диагнозов («порог красного»). */
+export const LED_COLOR_GENITIVE: Record<LedColor, string> = {
+  red: 'красного',
+  yellow: 'жёлтого',
+  green: 'зелёного',
+  blue: 'синего',
 };
 
 /** Первая буква — заглавная: строки Разбора начинаются именем Компонента. */

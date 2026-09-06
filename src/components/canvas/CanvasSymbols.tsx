@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ComponentKind, LedColor, PlacedComponent } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
-import { defaultValuesOf, valueFieldOf } from '../../domain/canvas';
+import { defaultLedColor, defaultValuesOf, valueFieldOf } from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
 import {
   DIODE_FORWARD_VOLTAGE,
@@ -65,7 +65,7 @@ export function componentValueLabel(component: PlacedComponent): string {
     case 'closed':
       return component.closed ? 'замкнут' : 'разомкнут';
     case 'color': {
-      const color = component.color ?? 'red';
+      const color = component.color ?? defaultLedColor;
       return `${ledColorTitles[color]} · ${formatQuantity(LED_FORWARD_VOLTAGE[color], 'В')}`;
     }
     case 'none':
@@ -330,7 +330,7 @@ function LedGlow({ component, reading }: { component: PlacedComponent; reading?:
     <circle
       className="symbol-led-glow"
       r={22}
-      fill={LED_GLOW_FILL[component.color ?? 'red']}
+      fill={LED_GLOW_FILL[component.color ?? defaultLedColor]}
       opacity={brightness}
       aria-hidden="true"
     />

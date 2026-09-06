@@ -201,25 +201,26 @@ describe('диагноз: пройдено — Диагноза нет', () => {
   });
 });
 
-describe('диагнозы М2: диод и светодиод', () => {
-  /** Задание-эталон М2: светодиод светится с током 5–15 мА через токоограничивающий резистор. */
-  const ledTask: CircuitTask = {
-    kind: 'circuit-task',
-    id: 'trap-led',
-    prompt: 'Светодиод должен светиться с током 5–15 мА.',
-    palette: ['battery', 'resistor', 'led'],
-    conditions: [
-      { kind: 'component-used', componentKind: 'resistor' },
-      { kind: 'component-active', componentKind: 'led', active: true },
-      { kind: 'current-through', componentKind: 'led', range: { from: 0.005, to: 0.015 } },
-    ],
-  };
+/** Задание-эталон М2: светодиод светится с током 5–15 мА через токоограничивающий резистор. */
+const ledTask: CircuitTask = {
+  kind: 'circuit-task',
+  id: 'trap-led',
+  prompt: 'Светодиод должен светиться с током 5–15 мА.',
+  palette: ['battery', 'resistor', 'led'],
+  conditions: [
+    { kind: 'component-used', componentKind: 'resistor' },
+    { kind: 'component-active', componentKind: 'led', active: true },
+    { kind: 'current-through', componentKind: 'led', range: { from: 0.005, to: 0.015 } },
+  ],
+};
 
-  function evaluateLed(canvas: CanvasState) {
-    const verdict = evaluate(ledTask, answer(canvas.components, canvas.wires));
-    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
-    return verdict;
-  }
+function evaluateLed(canvas: CanvasState) {
+  const verdict = evaluate(ledTask, answer(canvas.components, canvas.wires));
+  if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+  return verdict;
+}
+
+describe('диагнозы М2: диод и светодиод', () => {
 
   it('светодиод включён обратно → Диагноз «диод не проводит в обратную сторону» на светодиоде', () => {
     // катод (вывод 1) — к «плюсу» батареи: диод заперт, тока нет, светодиод не светится
@@ -300,5 +301,45 @@ describe('диагнозы М2: диод и светодиод', () => {
     });
     expect(verdict.diagnoses[0].kind).toBe('reversed-diode');
     expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'd' });
+  });
+});
+
+describe('диагноз М2: напряжение ниже прямого порога', () => {
+  it('исправный контур, но батареи не хватает до порога цвета — не «обрыв», а «диод не открылся»', () => {
+    // 1,5 В на красном светодиоде (порог 1,8 В): контур замкнут, тока нет
+    const verdict = evaluateLed({
+      components: [
+        component('b', 'battery', { voltage: 1.5 }),
+        component('r', 'resistor'),
+        component('led', 'led'),
+      ],
+      wires: [
+        wire('w1', pin('b', 0), pin('led', 0)),
+        wire('w2', pin('led', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    });
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses).toHaveLength(1);
+    expect(verdict.diagnoses[0].kind).toBe('diode-below-threshold');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'led' });
+    expect(verdict.diagnoses[0].text).toContain('ниже прямого порога');
+    expect(verdict.diagnoses[0].text).toContain('красного');
+  });
+
+  it('диоду с порогом 0,7 В хватает 1,5 В — Диагноза про порог нет', () => {
+    const verdict = evaluateLed({
+      components: [
+        component('b', 'battery', { voltage: 1.5 }),
+        component('r', 'resistor'),
+        component('d', 'diode'),
+      ],
+      wires: [
+        wire('w1', pin('b', 0), pin('d', 0)),
+        wire('w2', pin('d', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    });
+    expect(verdict.diagnoses[0].kind).not.toBe('diode-below-threshold');
   });
 });
