@@ -403,31 +403,54 @@ describe('Кнопка «Проверить»', () => {
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
   });
 
-  it('витрина М2 из настоящего контента проходит: батарея, выключатель, лампочка, выключатель замкнут', async () => {
+  it('витрина М2 из настоящего контента проходит: светодиод с резистором в прямом включении', async () => {
     const user = userEvent.setup();
-    const m2Demo = module2.tasks.find((task) => task.kind === 'circuit-task') as CircuitTask;
-    renderCheckableTask(m2Demo);
+    // первое Схема-задание М2 — «зажги светодиод с токоограничивающим резистором»
+    const m2Led = module2.tasks.find((task) => task.kind === 'circuit-task') as CircuitTask;
+    renderCheckableTask(m2Led);
 
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
-    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
-    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 3' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 3' }));
-    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Светодиод' }));
 
-    // разомкнутый выключатель — лампочка не горит
+    // контур не замкнут — проверка честно проваливается
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Не пройдено')).toBeInTheDocument();
 
-    // замыкаем — схема проходит по условию
-    await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
-    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    // прямое включение: «плюс» батареи — на анод (вывод 1) светодиода
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Светодиод 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Светодиод 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
-    expect(screen.getByText(/Выключатель на схеме: 1 шт/)).toBeInTheDocument();
+    // Разбор называет измеренный ток и состояние светодиода
+    expect(screen.getByText(/Ток через светодиод/)).toBeInTheDocument();
+    expect(screen.getByText(/Светодиод светится/)).toBeInTheDocument();
+  });
+
+  it('светодиод в обратном включении → Диагноз «диод не проводит в обратную сторону» с местом ошибки', async () => {
+    const user = userEvent.setup();
+    const m2Led = module2.tasks.find((task) => task.kind === 'circuit-task') as CircuitTask;
+    renderCheckableTask(m2Led);
+
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Светодиод' }));
+    // катод (вывод 2) — к «плюсу» батареи: диод заперт
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Светодиод 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Светодиод 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/обратную сторону/)).toBeInTheDocument();
   });
 });
 
@@ -806,14 +829,14 @@ describe('Подсказки и Экзамен на экране Схема-за
     renderModule2Task();
 
     expect(screen.getByText('Схема-задание')).toBeInTheDocument();
-    expect(screen.queryByText(/замкнутое кольцо/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/прямой порог светодиода/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Подсказка' }));
-    expect(screen.getByText(/замкнутое кольцо/)).toBeInTheDocument();
-    expect(screen.queryByText(/«плюс» батареи/)).not.toBeInTheDocument();
+    expect(screen.getByText(/прямой порог светодиода/)).toBeInTheDocument();
+    expect(screen.queryByText(/по стрелке/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Ещё подсказка' }));
-    expect(screen.getByText(/«плюс» батареи/)).toBeInTheDocument();
+    expect(screen.getByText(/по стрелке/)).toBeInTheDocument();
   });
 
   it('Экзамен помечен вместо «Схема-задание»', () => {

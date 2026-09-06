@@ -10,6 +10,7 @@ import {
   enterModule1Tasks,
   passTheory,
   setResistance,
+  wireForwardDiode,
   wireRing,
 } from '../testing/navigation';
 // Курс, Теория и Прогресс — по настоящим данным приложения, домен не мокается.
@@ -37,9 +38,9 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, витрина М2 — 3
+    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 6 (тикет 13)
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
@@ -238,29 +239,42 @@ describe('Экзамен Модуля', () => {
 });
 
 describe('Схема-задание в потоке Курса', () => {
-  it('М1 сдана → М2: Теория, Вопрос, Схема-задание и Экзамен — Курс завершается', async () => {
+  it('М1 сдана → М2: Теория, Вопросы, Схема-задания и Экзамен — Курс завершается', async () => {
     const user = userEvent.setup();
-    // М1 закрыта заранее — сразу к М2
+    // М1 закрыта заранее — сразу к М2 (три карточки Теории → Задания)
     seedModule1Progress();
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: 'Начать' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await passTheory(user, 3);
 
-    // Вопрос М2
+    // Вопрос про обратное включение светодиода
+    await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
+    // Числовой Вопрос: ток светодиода через резистор
+    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
+    await user.click(screen.getByRole('button', { name: 'Ответить' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
+    // Вопрос про конденсатор
     await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    // витрина Схема-задания: батарея, выключатель, лампочка
+    // «зажги светодиод»: светодиод с токоограничивающим резистором в прямом включении
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
-    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
-    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
-    await wireRing(user, ['Батарея 1', 'Выключатель 2', 'Лампочка 3']);
-
-    // разомкнуто — не пройдено; замыкаем — пройдено
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Светодиод' }));
+    await wireForwardDiode(user, ['Батарея 1', 'Светодиод 3', 'Резистор 2']);
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
-    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
-    await closeSwitch(user, 'Выключатель 2');
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
+    // диод в прямом направлении
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Диод' }));
+    await wireForwardDiode(user, ['Батарея 1', 'Диод 3', 'Резистор 2']);
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
@@ -289,9 +303,14 @@ describe('Стандарт обозначений между сессиями', 
     const user = userEvent.setup();
     const firstRender = render(<App />);
 
-    // М2: Теория → Вопрос → Схема-задание
+    // М2: Теория → Вопросы → Схема-задание (проходим Вопросы очереди)
     await user.click(screen.getByRole('button', { name: 'Начать' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await passTheory(user, 3);
+    await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
+    await user.click(screen.getByRole('button', { name: 'Ответить' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
     await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
@@ -311,7 +330,7 @@ describe('Стандарт обозначений между сессиями', 
 
     // выбор стандарта применяется к следующему Заданию без переключателя
     await user.click(screen.getByRole('button', { name: 'Продолжить' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await passTheory(user, 3);
     expect(screen.getByRole('combobox', { name: 'Обозначения' })).toHaveValue('ansi');
     expect(batterySymbol().querySelector('circle')).not.toBeNull();
   });
@@ -328,8 +347,11 @@ describe('Песочница', () => {
     expect(screen.getByRole('heading', { name: 'Песочница' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
 
-    // Палитра по текущему Прогрессу (М1) — и без «Проверить»
+    // Палитра по текущему Прогрессу (М1) — и без «Проверить»:
+    // Компоненты М2 закрыты, пока Модуль не открыт в Курсе
     expect(screen.getByRole('button', { name: 'Моторчик' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Диод' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Светодиод' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Проверить' })).not.toBeInTheDocument();
 
     // контур из батареи и лампочки, сохранение под именем
@@ -438,7 +460,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     window.localStorage.clear();
     const secondRender = render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
 
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
     expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
@@ -498,7 +520,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
@@ -509,6 +531,6 @@ describe('Данные: экспорт, импорт и сброс', () => {
     firstRender.unmount();
     render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
   });
 });

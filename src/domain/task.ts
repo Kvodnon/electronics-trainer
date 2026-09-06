@@ -107,8 +107,8 @@ export type CircuitCondition =
     }
   | {
       readonly kind: 'component-active';
-      /** Активное состояние: лампочка горит, моторчик крутится. */
-      readonly componentKind: 'lamp' | 'motor';
+      /** Активное состояние: лампочка горит, моторчик крутится, светодиод светится. */
+      readonly componentKind: 'lamp' | 'motor' | 'led';
       readonly active: boolean;
     };
 

@@ -36,6 +36,25 @@ export async function wireRing(user: User, componentNames: readonly string[]): P
   }
 }
 
+/**
+ * Соединяет батарею, диод (или светодиод) и резистор в прямом включении:
+ * «плюс» батареи — на анод (вывод 1) диода, катод — на резистор, резистор —
+ * на «минус». Обычный wireRing включает диод наоборот: в кольце «вывод 2 →
+ * вывод 1» ток входит в Компонент со стороны катода.
+ */
+export async function wireForwardDiode(
+  user: User,
+  names: readonly [battery: string, diode: string, resistor: string],
+): Promise<void> {
+  const [battery, diode, resistor] = names;
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${battery}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${diode}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${diode}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${resistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${resistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${battery}` }));
+}
+
 /** Выбирает Компонент и меняет его сопротивление в панели правки. */
 export async function setResistance(
   user: User,

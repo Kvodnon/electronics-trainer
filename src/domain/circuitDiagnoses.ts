@@ -2,14 +2,15 @@
  * Классификатор Диагнозов Схема-задания (CONTEXT.md: Диагноз). Работает по
  * вычисленному решению Симулятора и проваленным условиям, а не по сравнению
  * с эталоном (ADR-0001): короткое замыкание, обрыв, обратное включение
- * источника, превышение тока и «работает, но не по условию» — каждый Диагноз
- * указывает место ошибки на схеме для подсветки. Чистый TypeScript без DOM.
+ * источника, обратное включение диода, превышение тока и «работает, но не
+ * по условию» — каждый Диагноз указывает место ошибки на схеме для подсветки.
+ * Чистый TypeScript без DOM.
  */
 import type { CanvasState } from './canvas';
 import { pinKey } from './canvas';
 import { formatQuantity, formatQuantityRange } from './quantity';
-import { COMPONENT_LEXIS } from './componentLexis';
-import { readingsOfKind, type DcSolution } from './simulator';
+import { COMPONENT_LEXIS, cap } from './componentLexis';
+import { LED_MAX_CURRENT, readingsOfKind, type DcSolution } from './simulator';
 import type { ConditionCheck } from './circuitConditions';
 
 /** Виды Диагнозов: фундаментальная ошибка или живая схема не по условию. */
@@ -17,6 +18,7 @@ export type CircuitDiagnosisKind =
   | 'short-circuit'
   | 'open-circuit'
   | 'reversed-source'
+  | 'reversed-diode'
   | 'overcurrent'
   | 'works-not-per-task';
 
@@ -39,6 +41,8 @@ const SHORT_CIRCUIT_MIN_CURRENT = 0.5;
 const SHORT_CIRCUIT_VOLTAGE_FRACTION = 0.2;
 /** Обратный ток больше этого — батарею разряжает другой источник. */
 const REVERSED_MIN_CURRENT = 1e-4;
+/** Обратное напряжение на диоде, начиная с которого он точно заперт, В. */
+const REVERSED_BIAS_MIN_VOLTAGE = 0.3;
 /** Токи ниже этой величины — цепь без тока (обрыв или нет источника). */
 const DEAD_CURRENT = 1e-6;
 /** Напряжение на разомкнутом контакте, ниже которого он не «виноват» в обрыве. */
@@ -46,8 +50,8 @@ const OPEN_CONTACT_MIN_VOLTAGE = 0.5;
 
 /**
  * Первичный Диагноз собранной схемы: пустой список, когда все условия
- * выполнены («пройдено»), иначе — одна главная причина, от самой
- * фундаментальной (КЗ, обрыв) к частной (не по условию). Именно она
+ * выполнены (и схема не «сжигает» Компонент), иначе — одна главная причина,
+ * от самой фундаментальной (КЗ, обрыв) к частной (не по условию). Именно она
  * подсвечивается на схеме и объясняется ученику.
  */
 export function diagnoseCircuit(
@@ -55,10 +59,17 @@ export function diagnoseCircuit(
   solution: DcSolution,
   conditionChecks: readonly ConditionCheck[],
 ): readonly CircuitDiagnosis[] {
-  if (conditionChecks.every((check) => check.passed)) return [];
+  if (conditionChecks.every((check) => check.passed)) {
+    // условия выполнены, но предельный ток Компонента превышен: «пройдено»
+    // горящий на пределе светодиод не засчитывает
+    const burnout = findRatingOvercurrent(solution);
+    return burnout !== null ? [burnout] : [];
+  }
   const diagnosis =
     findShortCircuit(canvas, solution) ??
     findReversedSource(solution) ??
+    findReversedDiode(solution) ??
+    findRatingOvercurrent(solution) ??
     findOpenCircuit(canvas, solution) ??
     findOvercurrent(conditionChecks) ??
     findWorksNotPerTask(conditionChecks);
@@ -117,6 +128,29 @@ function findReversedSource(solution: DcSolution): CircuitDiagnosis | null {
         spot: { kind: 'component', id: battery.componentId },
       };
     }
+  }
+  return null;
+}
+
+/**
+ * Обратное включение диода (диода или светодиода): всё напряжение источника
+ * осталось на запертом диоде — тока в его ветви нет, потому что диод против
+ * направления не проводит.
+ */
+function findReversedDiode(solution: DcSolution): CircuitDiagnosis | null {
+  for (const reading of solution.readings) {
+    if (reading.kind !== 'diode' && reading.kind !== 'led') continue;
+    if (reading.voltage > -REVERSED_BIAS_MIN_VOLTAGE) continue; // не заперт в обратную сторону
+    if (Math.abs(reading.current) >= DEAD_CURRENT) continue; // ток есть — не об обратном включении
+    const lexis = COMPONENT_LEXIS[reading.kind];
+    const doesNotLight = reading.kind === 'led' ? 'ток через него не идёт и светодиод не светится' : 'ток через него не идёт';
+    return {
+      kind: 'reversed-diode',
+      text:
+        `${cap(lexis.nominative)} включён в обратную сторону: диод не проводит против своего ` +
+        `направления, поэтому ${doesNotLight}. Разверните ${lexis.accusative} в цепи — выводы у него разные.`,
+      spot: { kind: 'component', id: reading.componentId },
+    };
   }
   return null;
 }
@@ -181,6 +215,26 @@ function firstWithUnconnectedPin(canvas: CanvasState): string | null {
   if (load !== undefined) return load.id;
   const battery = canvas.components.find((component) => component.kind === 'battery' && hasFreePin(component.id));
   return battery?.id ?? null;
+}
+
+/**
+ * Превышение предельного тока светодиода: прямой ток выше паспортного максимума
+ * независимо от условий Задания — Компонент перегревается, схему нельзя
+ * считать «прошедшей», даже если измерения попали в границы.
+ */
+function findRatingOvercurrent(solution: DcSolution): CircuitDiagnosis | null {
+  for (const led of readingsOfKind(solution, 'led')) {
+    if (led.current <= LED_MAX_CURRENT) continue;
+    return {
+      kind: 'overcurrent',
+      text:
+        `Превышение максимального тока: через светодиод идёт ${formatQuantity(led.current, 'А')} — ` +
+        `выше предельных ${formatQuantity(LED_MAX_CURRENT, 'А')}. Светодиод перегреется: ` +
+        'добавьте токоограничивающий резистор в цепь или снизьте напряжение источника.',
+      spot: { kind: 'component', id: led.componentId },
+    };
+  }
+  return null;
 }
 
 /** Превышение тока: проваленное условие «ток через…» выше верхней границы. */

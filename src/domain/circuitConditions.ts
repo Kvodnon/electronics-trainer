@@ -10,8 +10,10 @@ import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quanti
 import { COMPONENT_LEXIS, cap, type ComponentLexis } from './componentLexis';
 import {
   LAMP_LIT_POWER,
+  LED_LIT_CURRENT,
   MOTOR_SPIN_POWER,
   isLampLit,
+  isLedLit,
   isMotorSpinning,
   readingsOfKind,
   type ComponentReading,
@@ -152,19 +154,56 @@ function checkMeasurement(
   };
 }
 
+/** Какая величина и какой порог стоят за активным состоянием Компонента. */
+interface ActiveTraits {
+  /** Показание, которое сверяется с порогом (у светодиода — прямой ток). */
+  readonly valueOf: (reading: ComponentReading) => number;
+  /** Единица величины для записи с приставкой. */
+  readonly unit: QuantityUnit;
+  /** Имя величины в строке Разбора. */
+  readonly valueName: string;
+  /** Порог срабатывания. */
+  readonly threshold: number;
+  /** Глагол активного состояния. */
+  readonly verb: string;
+  readonly isActive: (reading: ComponentReading) => boolean;
+}
+
 /** Порог и глагол активного состояния по виду Компонента. */
-const ACTIVE_TRAITS: Record<'lamp' | 'motor', { threshold: number; verb: string; isActive: (reading: ComponentReading) => boolean }> = {
-  lamp: { threshold: LAMP_LIT_POWER, verb: 'горит', isActive: isLampLit },
-  motor: { threshold: MOTOR_SPIN_POWER, verb: 'крутится', isActive: isMotorSpinning },
+const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
+  lamp: {
+    valueOf: (reading) => reading.power,
+    unit: 'Вт',
+    valueName: 'мощность',
+    threshold: LAMP_LIT_POWER,
+    verb: 'горит',
+    isActive: isLampLit,
+  },
+  motor: {
+    valueOf: (reading) => reading.power,
+    unit: 'Вт',
+    valueName: 'мощность',
+    threshold: MOTOR_SPIN_POWER,
+    verb: 'крутится',
+    isActive: isMotorSpinning,
+  },
+  led: {
+    valueOf: (reading) => reading.current,
+    unit: 'А',
+    valueName: 'ток',
+    threshold: LED_LIT_CURRENT,
+    verb: 'светится',
+    isActive: isLedLit,
+  },
 };
 
-/** Проверка активного состояния: лампочка горит / моторчик крутится. */
+/** Проверка активного состояния: лампочка горит / моторчик крутится / светодиод светится. */
 function checkComponentActive(
   solution: DcSolution,
   condition: Extract<CircuitCondition, { kind: 'component-active' }>,
 ): ConditionCheck {
   const lexis = COMPONENT_LEXIS[condition.componentKind];
-  const { threshold, verb, isActive } = ACTIVE_TRAITS[condition.componentKind];
+  const { valueOf, unit, valueName, threshold, verb, isActive } = ACTIVE_TRAITS[condition.componentKind];
   const readings = readingsOfKind(solution, condition.componentKind);
 
   if (readings.length === 0) {
@@ -177,21 +216,21 @@ function checkComponentActive(
 
   const anyActive = readings.some(isActive);
   const candidate = readings.find(isActive) ?? readings[0];
-  const power = formatQuantity(candidate.power, 'Вт');
+  const value = formatQuantity(valueOf(candidate), unit);
   const passed = condition.active ? anyActive : !anyActive;
   const fact = anyActive
-    ? `${cap(lexis.nominative)} ${verb}: мощность ${power} не ниже порога ${formatQuantity(threshold, 'Вт')}.`
-    : `${cap(lexis.nominative)} не ${verb}: мощность ${power} ниже порога ${formatQuantity(threshold, 'Вт')}.`;
+    ? `${cap(lexis.nominative)} ${verb}: ${valueName} ${value} не ниже порога ${formatQuantity(threshold, unit)}.`
+    : `${cap(lexis.nominative)} не ${verb}: ${valueName} ${value} ниже порога ${formatQuantity(threshold, unit)}.`;
 
   if (condition.active || !anyActive) {
-    return { condition, passed, text: fact, componentId: candidate.componentId, measured: candidate.power };
+    return { condition, passed, text: fact, componentId: candidate.componentId, measured: valueOf(candidate) };
   }
-  // требуется «не горит», а Компонент активен
+  // требуется «не активен», а Компонент активен
   return {
     condition,
     passed,
     text: `${fact} По условию ${lexis.nominative} активной быть не должна.`,
     componentId: candidate.componentId,
-    measured: candidate.power,
+    measured: valueOf(candidate),
   };
 }

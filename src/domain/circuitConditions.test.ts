@@ -197,4 +197,31 @@ describe('checkConditions: активное состояние', () => {
     expect(result.passed).toBe(true);
     expect(result.text).toContain('крутится');
   });
+
+  it('светодиод светится в прямом направлении и гаснет в обратном: в Разборе ток, а не мощность', () => {
+    const forward = canvasOf(
+      [component('b', 'battery'), component('led', 'led'), component('r', 'resistor')],
+      [
+        wire('w1', pin('b', 0), pin('led', 0)),
+        wire('w2', pin('led', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const lit = check(forward, { kind: 'component-active', componentKind: 'led', active: true });
+    expect(lit.passed).toBe(true);
+    expect(lit.text).toContain('светится');
+    expect(lit.text).toContain('ток');
+
+    const reversed = canvasOf(
+      [component('b', 'battery'), component('led', 'led'), component('r', 'resistor')],
+      [
+        wire('w1', pin('b', 0), pin('led', 1)),
+        wire('w2', pin('led', 0), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const dark = check(reversed, { kind: 'component-active', componentKind: 'led', active: true });
+    expect(dark.passed).toBe(false);
+    expect(dark.text).toContain('не светится');
+  });
 });

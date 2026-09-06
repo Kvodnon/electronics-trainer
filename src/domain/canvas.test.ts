@@ -8,6 +8,7 @@ import {
   type CanvasHistory,
   type CanvasState,
   type ComponentKind,
+  type ComponentValuePatch,
 } from './canvas';
 
 /**
@@ -376,5 +377,37 @@ describe('Загрузка сохранённой схемы', () => {
     const undone = canvasReducer(placed, { type: 'undo' });
     expect(undone.present.components).toHaveLength(0);
     expect(canvasReducer(undone, { type: 'redo' }).present.components).toHaveLength(1);
+  });
+});
+
+describe('Холст М2: диод и светодиод', () => {
+  it('Светодиод ставится с цветом по умолчанию; диод не имеет правимого номинала', () => {
+    const history = historyWithPlaced(['led', 'diode']);
+    expect(defaultValuesOf('led')).toEqual({ color: 'red' });
+    expect(defaultValuesOf('diode')).toEqual({});
+    expect(history.present.components[0].color).toBe('red');
+  });
+
+  it('Цвет свечения светодиода меняется правкой color; чужие поля не прилипают', () => {
+    let history = historyWithPlaced(['led']);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { color: 'green' } });
+    expect(history.present.components[0].color).toBe('green');
+    // сопротивление — не поле светодиода
+    const wrongField = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { resistance: 100 } });
+    expect(wrongField).toBe(history);
+  });
+
+  it('Правка color отклоняет неизвестный цвет и не трогает диод', () => {
+    let history = historyWithPlaced(['led', 'diode']);
+    // цвет приходит в редьюсер из нетипизированных источников (импорт схемы,
+    // панель правки) — проверяется защита на уровне данных
+    const untypedColor = { color: 'crimson' } as unknown as ComponentValuePatch;
+    const badColor = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: untypedColor });
+    expect(badColor).toBe(history);
+    // у диода нет правимого номинала вовсе
+    const diodePatch = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { color: 'red' } });
+    expect(diodePatch).toBe(history);
+    const diodeResistance = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { resistance: 100 } });
+    expect(diodeResistance).toBe(history);
   });
 });

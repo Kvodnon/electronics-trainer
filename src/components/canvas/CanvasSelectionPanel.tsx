@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import type { ComponentValuePatch, PlacedComponent } from '../../domain/canvas';
-import { valueFieldOf } from '../../domain/canvas';
+import type { ComponentValuePatch, LedColor, PlacedComponent } from '../../domain/canvas';
+import { ledColors, valueFieldOf } from '../../domain/canvas';
 import { parseQuantity, type QuantityUnit } from '../../domain/quantity';
+import { ledColorTitles } from './CanvasSymbols';
 
 /**
  * Панель правки выбранного на Холсте: номинал Компонента, поворот и удаление
@@ -40,7 +41,8 @@ export function CanvasSelectionPanel({
   );
 }
 
-/** Форма номинала: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — замкнут. */
+/** Форма номинала: батарея — напряжение, резистор/лампа/мотор — сопротивление,
+ * коммутаторы — замкнут, светодиод — цвет свечения; у диода правимого поля нет. */
 function ComponentValueForm({
   component,
   onApply,
@@ -49,6 +51,26 @@ function ComponentValueForm({
   onApply: (patch: ComponentValuePatch) => void;
 }) {
   const field = valueFieldOf(component.kind);
+
+  if (field === 'none') return null;
+
+  if (field === 'color') {
+    return (
+      <label className="canvas-color-field">
+        Цвет свечения
+        <select
+          value={component.color ?? 'red'}
+          onChange={(event) => onApply({ color: event.target.value as LedColor })}
+        >
+          {ledColors.map((color) => (
+            <option key={color} value={color}>
+              {ledColorTitles[color]}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
 
   if (field === 'closed') {
     return (

@@ -16,10 +16,23 @@ export const componentKinds = [
   'switch',
   'pushbutton',
   'motor',
+  'diode',
+  'led',
 ] as const;
 
 /** Тип выводится из списка: список и тип не могут разойтись. */
 export type ComponentKind = (typeof componentKinds)[number];
+
+/** Цвет свечения светодиода: заодно задаёт его прямой порог (у синего он выше). */
+export type LedColor = 'red' | 'yellow' | 'green' | 'blue';
+
+/** Все цвета светодиода в порядке карточки Теории. */
+export const ledColors: readonly LedColor[] = ['red', 'yellow', 'green', 'blue'];
+
+/** Это цвет свечения светодиода? */
+export function isLedColor(value: unknown): value is LedColor {
+  return typeof value === 'string' && (ledColors as readonly string[]).includes(value);
+}
 
 /** Это вид Компонента Палитры? */
 export function isComponentKind(value: unknown): value is ComponentKind {
@@ -32,7 +45,9 @@ export type Rotation = 0 | 90 | 180 | 270;
 /**
  * Компонент на Холсте: вид из Палитры, центр в координатах сетки, поворот
  * и номиналы. Номинал зависит от вида: батарея — voltage (В);
- * резистор, лампа, мотор — resistance (Ом); выключатель и ключ — closed.
+ * резистор, лампа, мотор — resistance (Ом); выключатель и ключ — closed;
+ * светодиод — color (цвет свечения и заодно прямой порог); диод правимого
+ * номинала не имеет.
  */
 export interface PlacedComponent {
   readonly id: string;
@@ -43,6 +58,7 @@ export interface PlacedComponent {
   readonly voltage?: number;
   readonly resistance?: number;
   readonly closed?: boolean;
+  readonly color?: LedColor;
 }
 
 /** Ссылка на вывод Компонента: идентификатор и номер вывода. */
@@ -94,6 +110,7 @@ export interface ComponentValuePatch {
   readonly voltage?: number;
   readonly resistance?: number;
   readonly closed?: boolean;
+  readonly color?: LedColor;
 }
 
 /** История Холста: undo/redo — часть состояния, редьюсер остаётся чистым. */
@@ -114,10 +131,12 @@ const DEFAULT_VALUES: Record<ComponentKind, Omit<PlacedComponent, 'id' | 'kind' 
   switch: { closed: false },
   pushbutton: { closed: false },
   motor: { resistance: 50 },
+  diode: {},
+  led: { color: 'red' },
 };
 
 /** Какое номинальное поле носит вид Компонента. */
-export type ValueField = 'voltage' | 'resistance' | 'closed';
+export type ValueField = 'voltage' | 'resistance' | 'closed' | 'color' | 'none';
 
 const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   battery: 'voltage',
@@ -126,6 +145,8 @@ const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   motor: 'resistance',
   switch: 'closed',
   pushbutton: 'closed',
+  diode: 'none',
+  led: 'color',
 };
 
 /** Поле номинала вида: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — состояние. */
@@ -310,6 +331,11 @@ function applicableValuePatch(
         : null;
     case 'closed':
       return patch.closed !== undefined ? { closed: patch.closed } : null;
+    case 'color':
+      return patch.color !== undefined && isLedColor(patch.color) ? { color: patch.color } : null;
+    case 'none':
+      // у диода нет правимого номинала — правка отклоняется целиком
+      return null;
   }
 }
 

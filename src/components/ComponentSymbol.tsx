@@ -83,6 +83,50 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
       </>
     ),
   },
+  diode: {
+    name: 'Диод',
+    gost: (
+      <>
+        {leadLeftTo(50)}
+        {/* треугольник проводимости заполнен: ток идёт «по стрелке», к черте-катоду */}
+        <polygon points="50,10 50,38 82,24" fill="currentColor" stroke="none" />
+        <path d="M82 10 V38" />
+        {leadRightFrom(82)}
+      </>
+    ),
+    ansi: (
+      <>
+        {leadLeftTo(50)}
+        <polygon points="50,10 50,38 82,24" />
+        <path d="M82 10 V38" />
+        {leadRightFrom(82)}
+      </>
+    ),
+  },
+  led: {
+    name: 'Светодиод',
+    gost: (
+      <>
+        {leadLeftTo(50)}
+        <polygon points="50,10 50,38 82,24" fill="currentColor" stroke="none" />
+        <path d="M82 10 V38" />
+        {/* стрелки излучения — свет уходит прочь от символа */}
+        <path d="M64 12 L76 2 M70 2 L76 2 L76 8" />
+        <path d="M72 14 L84 4 M78 4 L84 4 L84 10" />
+        {leadRightFrom(82)}
+      </>
+    ),
+    ansi: (
+      <>
+        {leadLeftTo(50)}
+        <polygon points="50,10 50,38 82,24" />
+        <path d="M82 10 V38" />
+        <path d="M64 12 L76 2 M70 2 L76 2 L76 8" />
+        <path d="M72 14 L84 4 M78 4 L84 4 L84 10" />
+        {leadRightFrom(82)}
+      </>
+    ),
+  },
 };
 
 function SymbolFigure({ standard, drawing }: { standard: string; drawing: ReactNode }) {

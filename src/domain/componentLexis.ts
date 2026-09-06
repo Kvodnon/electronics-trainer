@@ -21,6 +21,8 @@ export const COMPONENT_LEXIS: Record<ComponentKind, ComponentLexis> = {
   switch: { nominative: 'выключатель', accusative: 'выключатель', prepositional: 'выключателе', genitive: 'выключателя', genitivePlural: 'выключателей' },
   pushbutton: { nominative: 'ключ', accusative: 'ключ', prepositional: 'ключе', genitive: 'ключа', genitivePlural: 'ключей' },
   motor: { nominative: 'моторчик', accusative: 'моторчик', prepositional: 'моторчике', genitive: 'моторчика', genitivePlural: 'моторчиков' },
+  diode: { nominative: 'диод', accusative: 'диод', prepositional: 'диоде', genitive: 'диода', genitivePlural: 'диодов' },
+  led: { nominative: 'светодиод', accusative: 'светодиод', prepositional: 'светодиоде', genitive: 'светодиода', genitivePlural: 'светодиодов' },
 };
 
 /** Первая буква — заглавная: строки Разбора начинаются именем Компонента. */

@@ -200,3 +200,105 @@ describe('диагноз: пройдено — Диагноза нет', () => {
     expect(verdict.diagnoses).toHaveLength(0);
   });
 });
+
+describe('диагнозы М2: диод и светодиод', () => {
+  /** Задание-эталон М2: светодиод светится с током 5–15 мА через токоограничивающий резистор. */
+  const ledTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'trap-led',
+    prompt: 'Светодиод должен светиться с током 5–15 мА.',
+    palette: ['battery', 'resistor', 'led'],
+    conditions: [
+      { kind: 'component-used', componentKind: 'resistor' },
+      { kind: 'component-active', componentKind: 'led', active: true },
+      { kind: 'current-through', componentKind: 'led', range: { from: 0.005, to: 0.015 } },
+    ],
+  };
+
+  function evaluateLed(canvas: CanvasState) {
+    const verdict = evaluate(ledTask, answer(canvas.components, canvas.wires));
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    return verdict;
+  }
+
+  it('светодиод включён обратно → Диагноз «диод не проводит в обратную сторону» на светодиоде', () => {
+    // катод (вывод 1) — к «плюсу» батареи: диод заперт, тока нет, светодиод не светится
+    const verdict = evaluateLed({
+      components: [component('b', 'battery'), component('r', 'resistor'), component('led', 'led')],
+      wires: [
+        wire('w1', pin('b', 0), pin('led', 1)),
+        wire('w2', pin('led', 0), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    });
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses).toHaveLength(1);
+    expect(verdict.diagnoses[0].kind).toBe('reversed-diode');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'led' });
+    expect(verdict.diagnoses[0].text).toContain('обратную сторону');
+    expect(verdict.diagnoses[0].text).toContain('не светится');
+  });
+
+  it('светодиод без токоограничивающего резистора → превышение максимального тока даже сверх условия', () => {
+    // 9 В напрямую на светодиод: модель даёт (9−1,8)/rон ≈ 0,9 А — далеко за предельные 20 мА
+    const verdict = evaluateLed({
+      components: [component('b', 'battery'), component('led', 'led')],
+      wires: [wire('w1', pin('b', 0), pin('led', 0)), wire('w2', pin('led', 1), pin('b', 1))],
+    });
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses[0].kind).toBe('overcurrent');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'led' });
+    expect(verdict.diagnoses[0].text).toContain('максимального тока');
+  });
+
+  it('превышение предельного тока — Диагноз и при выполненных условиях: «пройдено» горящий на пределе светодиод не засчитывает', () => {
+    // надуманные условия (светодиод светится, ток 0,5–1 А) выполняются на схеме без резистора,
+    // но предельные 20 мА превышены: контракт — Диагноз «сжигания» сильнее «пройдено»
+    const looseTask: CircuitTask = {
+      ...ledTask,
+      id: 'trap-led-loose',
+      conditions: [
+        { kind: 'component-active', componentKind: 'led', active: true },
+        { kind: 'current-through', componentKind: 'led', range: { from: 0.5, to: 1.0 } },
+      ],
+    };
+    const verdict = evaluate(
+      looseTask,
+      answer(
+        [component('b', 'battery'), component('led', 'led')],
+        [wire('w1', pin('b', 0), pin('led', 0)), wire('w2', pin('led', 1), pin('b', 1))],
+      ),
+    );
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    expect(verdict.conditionChecks.every((check) => check.passed)).toBe(true);
+    expect(verdict.diagnoses[0].kind).toBe('overcurrent');
+    expect(verdict.diagnoses[0].text).toContain('максимального тока');
+  });
+
+  it('исправная схема: светодиод светится, ток в границах — Диагнозов нет', () => {
+    const verdict = evaluateLed({
+      components: [component('b', 'battery'), component('r', 'resistor'), component('led', 'led')],
+      wires: [
+        wire('w1', pin('b', 0), pin('led', 0)),
+        wire('w2', pin('led', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    });
+    expect(verdict.outcome).toBe('correct');
+    expect(verdict.diagnoses).toHaveLength(0);
+  });
+
+  it('диод включён обратно → тот же Диагноз «обратное включение», но про диод', () => {
+    const verdict = evaluateLed({
+      components: [component('b', 'battery'), component('r', 'resistor'), component('d', 'diode'), component('led', 'led')],
+      wires: [
+        wire('w1', pin('b', 0), pin('led', 0)),
+        wire('w2', pin('led', 1), pin('d', 1)),
+        wire('w3', pin('d', 0), pin('r', 0)),
+        wire('w4', pin('r', 1), pin('b', 1)),
+      ],
+    });
+    expect(verdict.diagnoses[0].kind).toBe('reversed-diode');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'd' });
+  });
+});

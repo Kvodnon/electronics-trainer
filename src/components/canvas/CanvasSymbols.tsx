@@ -1,16 +1,24 @@
 import type { ReactNode } from 'react';
-import type { ComponentKind, PlacedComponent } from '../../domain/canvas';
+import type { ComponentKind, LedColor, PlacedComponent } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
 import { defaultValuesOf, valueFieldOf } from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
-import { isMotorSpinning, lampBrightness, type ComponentReading } from '../../domain/simulator';
+import {
+  DIODE_FORWARD_VOLTAGE,
+  isMotorSpinning,
+  lampBrightness,
+  ledBrightness,
+  LED_FORWARD_VOLTAGE,
+  type ComponentReading,
+} from '../../domain/simulator';
 
 /**
  * Условные обозначения Компонентов на Холсте — два набора: ГОСТ (тикет 04)
  * и ANSI (тикет 07); переключение — в Задании, само Холст-состояние оно
  * не трогает. Каждый символ рисуется в локальных координатах: центр (0,0),
  * выводы на (−40, 0) и (+40, 0); слой редактора оборачивает тело
- * в <g transform="translate(x y) rotate(deg)">.
+ * в <g transform="translate(x y) rotate(deg)">. У диода вывод 0 — анод:
+ * ток проводит «по стрелке» треугольника, от анода к катоду.
  */
 
 /** Названия Компонентов Палитры (копия UI; идентификаторы — данные домена). */
@@ -21,6 +29,24 @@ export const componentTitles: Record<ComponentKind, string> = {
   switch: 'Выключатель',
   pushbutton: 'Ключ',
   motor: 'Моторчик',
+  diode: 'Диод',
+  led: 'Светодиод',
+};
+
+/** Названия цветов свечения светодиода (копия UI; идентификаторы — данные домена). */
+export const ledColorTitles: Record<LedColor, string> = {
+  red: 'красный',
+  yellow: 'жёлтый',
+  green: 'зелёный',
+  blue: 'синий',
+};
+
+/** Цвет ореола светящегося светодиода — сам цвет свечения. */
+const LED_GLOW_FILL: Record<LedColor, string> = {
+  red: '#ff6b5e',
+  yellow: '#ffd75e',
+  green: '#7de87d',
+  blue: '#6db3ff',
 };
 
 /** Подписи стандартов для переключателя в Задании. */
@@ -38,6 +64,12 @@ export function componentValueLabel(component: PlacedComponent): string {
       return formatQuantity(component.resistance ?? 0, 'Ом');
     case 'closed':
       return component.closed ? 'замкнут' : 'разомкнут';
+    case 'color': {
+      const color = component.color ?? 'red';
+      return `${ledColorTitles[color]} · ${formatQuantity(LED_FORWARD_VOLTAGE[color], 'В')}`;
+    }
+    case 'none':
+      return `порог ${formatQuantity(DIODE_FORWARD_VOLTAGE, 'В')}`;
   }
 }
 
@@ -142,6 +174,27 @@ function GostBody({ component, reading }: { component: PlacedComponent; reading?
           <MotorRotor reading={reading} sign="М" />
         </>
       );
+    case 'diode':
+      return (
+        <>
+          <Leads from={16} />
+          {/* треугольник проводимости: ток идёт «по стрелке», от анода (вывод 0) к черте */}
+          <polygon points="-12,-12 -12,12 12,0" fill="currentColor" stroke="none" />
+          <path d="M12 -12 V12" />
+        </>
+      );
+    case 'led':
+      return (
+        <>
+          <LedGlow component={component} reading={reading} />
+          <Leads from={16} />
+          <polygon points="-12,-12 -12,12 12,0" fill="currentColor" stroke="none" />
+          <path d="M12 -12 V12" />
+          {/* стрелки излучения — свет уходит прочь от символа */}
+          <path d="M2 -12 L12 -22 M6 -22 L12 -22 L12 -16" />
+          <path d="M14 -12 L24 -22 M18 -22 L24 -22 L24 -16" />
+        </>
+      );
   }
 }
 
@@ -202,6 +255,26 @@ function AnsiBody({ component, reading }: { component: PlacedComponent; reading?
           <MotorRotor reading={reading} sign="M" />
         </>
       );
+    case 'diode':
+      return (
+        <>
+          <Leads from={16} />
+          {/* тот же треугольник с чертой, но контуром: у ANSI заполнения нет */}
+          <polygon points="-12,-12 -12,12 12,0" />
+          <path d="M12 -12 V12" />
+        </>
+      );
+    case 'led':
+      return (
+        <>
+          <LedGlow component={component} reading={reading} />
+          <Leads from={16} />
+          <polygon points="-12,-12 -12,12 12,0" />
+          <path d="M12 -12 V12" />
+          <path d="M2 -12 L12 -22 M6 -22 L12 -22 L12 -16" />
+          <path d="M14 -12 L24 -22 M18 -22 L24 -22 L24 -16" />
+        </>
+      );
   }
 }
 
@@ -242,6 +315,22 @@ function LampGlow({ reading }: { reading?: ComponentReading }): ReactNode {
     <circle
       className="symbol-lamp-glow"
       r={22}
+      opacity={brightness}
+      aria-hidden="true"
+    />
+  );
+}
+
+/** Ореол светящегося светодиода: цвет — цвет свечения, прозрачность — яркость от прямого тока. */
+function LedGlow({ component, reading }: { component: PlacedComponent; reading?: ComponentReading }): ReactNode {
+  if (reading === undefined) return null;
+  const brightness = ledBrightness(reading);
+  if (brightness <= 0) return null;
+  return (
+    <circle
+      className="symbol-led-glow"
+      r={22}
+      fill={LED_GLOW_FILL[component.color ?? 'red']}
       opacity={brightness}
       aria-hidden="true"
     />

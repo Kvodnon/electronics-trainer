@@ -10,8 +10,14 @@
  *   и моторчиков определяется мощностью (пороги срабатывания);
  * - выключатель и ключ — замкнутый контакт с малым, разомкнутый с огромным
  *   сопротивлением: обрыв честно даёт ток ≈ 0, не ломая решение.
+ *
+ * Нелинейные модели М2: диод и светодиод — кусочно-линейные с прямым порогом.
+ * Проводящее состояние — ЭДС порога с малым последовательным сопротивлением
+ * (эквивалент Нортона, как у батареи); запертое — обрыв. Состояние каждого
+ * диода угадывается итеративно: схема решается, состояния поправляются, пока
+ * не перестанут меняться.
  */
-import { pinKey, type CanvasState, type ComponentKind, type PlacedComponent } from './canvas';
+import { pinKey, type CanvasState, type ComponentKind, type LedColor, type PlacedComponent } from './canvas';
 
 /** Внутреннее сопротивление батареи, Ом (поведенческая модель М1). */
 export const BATTERY_INTERNAL_RESISTANCE = 0.1;
@@ -25,6 +31,20 @@ export const LAMP_LIT_POWER = 0.02;
 export const LAMP_FULL_POWER = 0.5;
 /** Порог мощности вращения моторчика, Вт. */
 export const MOTOR_SPIN_POWER = 0.05;
+/** Прямой порог кремниевого диода, В. */
+export const DIODE_FORWARD_VOLTAGE = 0.7;
+/** Последовательное сопротивление проводящего диода, Ом (поведенческая модель). */
+export const DIODE_ON_RESISTANCE = 8;
+/** Прямой порог светодиода по цвету свечения, В. */
+export const LED_FORWARD_VOLTAGE: Record<LedColor, number> = { red: 1.8, yellow: 2.0, green: 2.2, blue: 3.0 };
+/** Предельный постоянный ток светодиода, А: выше — Диагноз «превышение тока». */
+export const LED_MAX_CURRENT = 0.02;
+/** Порог зажигания светодиода, А: ниже свечения глазу не видно. */
+export const LED_LIT_CURRENT = 0.001;
+/** Ток полного накала светодиода, А: выше — яркость насыщается. */
+export const LED_FULL_CURRENT = 0.02;
+/** Защита от колебаний перебора состояний диодов в одном острове. */
+const MAX_DIODE_ITERATIONS = 50;
 
 /**
  * Показание Симулятора для одного Компонента. Знаки: напряжение — вывод 0
@@ -131,6 +151,21 @@ export function isMotorSpinning(reading: ComponentReading): boolean {
   return reading.power >= MOTOR_SPIN_POWER;
 }
 
+/** Светодиод светится: прямой ток не ниже порога зажигания (обратный ток не светит). */
+export function isLedLit(reading: ComponentReading): boolean {
+  return reading.current >= LED_LIT_CURRENT;
+}
+
+/**
+ * Яркость светодиода от 0 до 1: живое поведение Холста. Считается по прямому
+ * току: ниже порога зажигания — 0, дальше растёт с током и насыщается при
+ * полном накале. У запертого (обратного включения) светодиода яркости нет.
+ */
+export function ledBrightness(reading: ComponentReading): number {
+  if (reading.current < LED_LIT_CURRENT) return 0;
+  return Math.min(1, reading.current / LED_FULL_CURRENT);
+}
+
 /** Ниже этой величины ток и мощность — числовая пыль разомкнутых контактов. */
 const NUMERICAL_DUST = 1e-7;
 
@@ -146,7 +181,22 @@ function branchResistance(component: PlacedComponent): number {
     case 'switch':
     case 'pushbutton':
       return component.closed ? CLOSED_CONTACT_RESISTANCE : OPEN_CONTACT_RESISTANCE;
+    case 'diode':
+    case 'led':
+      // запертое состояние диода — обрыв; проводящее штемпелюется отдельно
+      return OPEN_CONTACT_RESISTANCE;
   }
+}
+
+/** Это диод с кусочно-линейной моделью (диод или светодиод)? */
+function isDiodeKind(kind: ComponentKind): boolean {
+  return kind === 'diode' || kind === 'led';
+}
+
+/** Прямой порог диода по виду и цвету Компонента. */
+function forwardVoltageOf(component: PlacedComponent): number {
+  if (component.kind === 'led') return LED_FORWARD_VOLTAGE[component.color ?? 'red'];
+  return DIODE_FORWARD_VOLTAGE;
 }
 
 /** Ветвь схемы: Компонент между узлами своих выводов (0 → A, 1 → B). */
@@ -229,15 +279,19 @@ export function solveDc(canvas: CanvasState): DcSolution {
     if (branch.component.kind === 'battery') islandsWithBattery.add(findIsland(branch.nodeA));
   }
 
+  // Проводящие диоды: состояния угадываются итеративно в каждом острове.
+  const conductingDiodes = new Set<string>();
   for (const islandRoot of islandsWithBattery) {
     const ground = branches.find(
       (branch) =>
         branch.component.kind === 'battery' && findIsland(branch.nodeA) === islandRoot,
     )!.nodeB;
-    solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage);
+    for (const id of solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage)) {
+      conductingDiodes.add(id);
+    }
   }
 
-  const readings = branches.map((branch) => readingOfBranch(branch, nodeVoltage));
+  const readings = branches.map((branch) => readingOfBranch(branch, nodeVoltage, conductingDiodes));
   const pinNodes = new Map<string, PinNode>();
   for (const branch of branches) {
     pinNodes.set(pinKey(branch.component.id, 0), {
@@ -252,14 +306,20 @@ export function solveDc(canvas: CanvasState): DcSolution {
   return { readings, pinNodes };
 }
 
-/** Собирает и решает узловые уравнения одного острова с «землёй» ground. */
+/**
+ * Собирает и решает узловые уравнения одного острова с «землёй» ground.
+ * Диоды острова нелинейны, поэтому решение итеративное: все диоды стартуют
+ * запертыми; после каждого решения состояние диода правится (открылся при
+ * напряжении выше порога, закрылся при исчезновении прямого тока), пока
+ * состояния не перестанут меняться. Возвращает множество проводящих диодов.
+ */
 function solveIsland(
   branches: readonly Branch[],
   islandRoot: string,
   ground: number,
   findIsland: (node: number) => string,
   nodeVoltage: number[],
-): void {
+): Set<string> {
   const inIsland = (branch: Branch): boolean =>
     findIsland(branch.nodeA) === islandRoot || findIsland(branch.nodeB) === islandRoot;
 
@@ -271,6 +331,37 @@ function solveIsland(
     }
   }
 
+  const conducting = new Set<string>();
+  for (let iteration = 0; ; iteration += 1) {
+    solveWithDiodeStates(branches, inIsland, localIndex, conducting, nodeVoltage);
+
+    let changed = false;
+    for (const branch of branches) {
+      if (!inIsland(branch) || !isDiodeKind(branch.component.kind)) continue;
+      const voltage = nodeVoltage[branch.nodeA] - nodeVoltage[branch.nodeB];
+      const forward = forwardVoltageOf(branch.component);
+      const isOn = conducting.has(branch.component.id);
+      if (!isOn && voltage >= forward) {
+        conducting.add(branch.component.id);
+        changed = true;
+      } else if (isOn && (voltage - forward) / DIODE_ON_RESISTANCE < 0) {
+        conducting.delete(branch.component.id);
+        changed = true;
+      }
+    }
+    if (!changed || iteration >= MAX_DIODE_ITERATIONS) break;
+  }
+  return conducting;
+}
+
+/** Одно решение узловых уравнений при фиксированных состояниях диодов. */
+function solveWithDiodeStates(
+  branches: readonly Branch[],
+  inIsland: (branch: Branch) => boolean,
+  localIndex: Map<number, number>,
+  conducting: Set<string>,
+  nodeVoltage: number[],
+): void {
   const size = localIndex.size;
   const conductance: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
   const injection = new Array<number>(size).fill(0);
@@ -292,6 +383,15 @@ function solveIsland(
     if (branch.component.kind === 'battery') {
       const g = 1 / BATTERY_INTERNAL_RESISTANCE;
       const current = (branch.component.voltage ?? 0) / BATTERY_INTERNAL_RESISTANCE;
+      stampConductance(branch.nodeA, branch.nodeB, g);
+      const la = localIndex.get(branch.nodeA);
+      const lb = localIndex.get(branch.nodeB);
+      if (la !== undefined) injection[la] += current;
+      if (lb !== undefined) injection[lb] -= current;
+    } else if (isDiodeKind(branch.component.kind) && conducting.has(branch.component.id)) {
+      // проводящий диод — ЭДС порога с малым последовательным сопротивлением
+      const g = 1 / DIODE_ON_RESISTANCE;
+      const current = forwardVoltageOf(branch.component) / DIODE_ON_RESISTANCE;
       stampConductance(branch.nodeA, branch.nodeB, g);
       const la = localIndex.get(branch.nodeA);
       const lb = localIndex.get(branch.nodeB);
@@ -337,8 +437,12 @@ function solveLinearSystem(a: number[][], b: number[]): number[] {
   return x;
 }
 
-/** Показание ветви по узловым потенциалам. */
-function readingOfBranch(branch: Branch, nodeVoltage: readonly number[]): ComponentReading {
+/** Показание ветви по узловым потенциалам и состояниям диодов. */
+function readingOfBranch(
+  branch: Branch,
+  nodeVoltage: readonly number[],
+  conductingDiodes: ReadonlySet<string>,
+): ComponentReading {
   const { component } = branch;
   const voltage = nodeVoltage[branch.nodeA] - nodeVoltage[branch.nodeB];
   if (component.kind === 'battery') {
@@ -350,6 +454,18 @@ function readingOfBranch(branch: Branch, nodeVoltage: readonly number[]): Compon
       current: snapToZero(current),
       voltage,
       power: snapToZero(voltage * current),
+    };
+  }
+  if (isDiodeKind(component.kind)) {
+    const current = conductingDiodes.has(component.id)
+      ? (voltage - forwardVoltageOf(component)) / DIODE_ON_RESISTANCE
+      : 0;
+    return {
+      componentId: component.id,
+      kind: component.kind,
+      current: snapToZero(current),
+      voltage,
+      power: snapToZero(Math.abs(voltage * current)),
     };
   }
   const resistance = branchResistance(component);

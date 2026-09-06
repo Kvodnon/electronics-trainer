@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { course } from './course';
-import { module1 } from './m1';
+import { module1, module1Palette } from './m1';
+import { module2 } from './m2';
 import { isComponentKind, type CanvasState, type ComponentKind, type PlacedComponent, type Wire } from '../domain/canvas';
 import { defaultValuesOf } from '../domain/canvas';
 import type { CourseModule } from '../domain/course';
@@ -13,6 +14,7 @@ import type {
 } from '../domain/task';
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
+import { emptyProgress, progressReducer, sandboxPaletteOf } from '../domain/course';
 
 /**
  * Контент-линтер (тикет 12): структурные гарантии всего Курса. Каждый Вопрос —
@@ -265,25 +267,41 @@ describe('Объём контента М1 (тикет 12)', () => {
   });
 });
 
+/** Компонент с номиналами по умолчанию и заданными правками. */
+function comp(id: string, kind: ComponentKind, values: Partial<PlacedComponent> = {}): PlacedComponent {
+  return { id, kind, x: 0, y: 0, rotation: 0, ...defaultValuesOf(kind), ...values };
+}
+
+/** Последовательное кольцо: вывод 1 каждого Компонента — с выводом 0 следующего. */
+function ring(...components: readonly PlacedComponent[]): CanvasState {
+  const wires: Wire[] = components.map((component, index) => {
+    const next = components[(index + 1) % components.length];
+    return {
+      id: `w${index + 1}`,
+      from: { componentId: component.id, pin: 1 },
+      to: { componentId: next.id, pin: 0 },
+    };
+  });
+  return { components: [...components], wires };
+}
+
+/** Схема-задание Модуля по идентификатору. */
+function circuitTaskIn(module: CourseModule, id: string): CircuitTask {
+  const task = module.tasks.find(
+    (candidate): candidate is CircuitTask => candidate.kind === 'circuit-task' && candidate.id === id,
+  );
+  if (!task) throw new Error(`фикстура: нет Схема-задания «${id}»`);
+  return task;
+}
+
+function assertSolvable(task: CircuitTask, canvas: CanvasState): void {
+  const failed = checkConditions(canvas, solveDc(canvas), task.conditions)
+    .filter((check) => !check.passed)
+    .map((check) => check.text);
+  expect(failed, `Задание ${task.id} должно решаться эталон-схемой`).toEqual([]);
+}
+
 describe('Схема-задания М1 решаемы: эталон-решения проходят все условия', () => {
-  /** Компонент с номиналами по умолчанию и заданными правками. */
-  function comp(id: string, kind: ComponentKind, values: Partial<PlacedComponent> = {}): PlacedComponent {
-    return { id, kind, x: 0, y: 0, rotation: 0, ...defaultValuesOf(kind), ...values };
-  }
-
-  /** Последовательное кольцо: вывод 1 каждого Компонента — с выводом 0 следующего. */
-  function ring(...components: readonly PlacedComponent[]): CanvasState {
-    const wires: Wire[] = components.map((component, index) => {
-      const next = components[(index + 1) % components.length];
-      return {
-        id: `w${index + 1}`,
-        from: { componentId: component.id, pin: 1 },
-        to: { componentId: next.id, pin: 0 },
-      };
-    });
-    return { components: [...components], wires };
-  }
-
   /** Параллельные ветви на батарее: каждый Компонент висит на её выводах. */
   function parallelTo(base: PlacedComponent, branches: readonly PlacedComponent[]): CanvasState {
     const wires: Wire[] = branches.flatMap((component, index) => [
@@ -294,18 +312,7 @@ describe('Схема-задания М1 решаемы: эталон-решен�
   }
 
   function circuitTaskOf(id: string): CircuitTask {
-    const task = module1.tasks.find(
-      (candidate): candidate is CircuitTask => candidate.kind === 'circuit-task' && candidate.id === id,
-    );
-    if (!task) throw new Error(`фикстура: в М1 нет Схема-задания «${id}»`);
-    return task;
-  }
-
-  function assertSolvable(task: CircuitTask, canvas: CanvasState): void {
-    const failed = checkConditions(canvas, solveDc(canvas), task.conditions)
-      .filter((check) => !check.passed)
-      .map((check) => check.text);
-    expect(failed, `Задание ${task.id} должно решаться эталон-схемой`).toEqual([]);
+    return circuitTaskIn(module1, id);
   }
 
   it('первая цепь: батарея, замкнутый выключатель, лампочка', () => {
@@ -368,5 +375,80 @@ describe('Схема-задания М1 решаемы: эталон-решен�
     const borrowed = ring(comp('bat', 'battery'), comp('sw', 'switch', { closed: true }), comp('lamp', 'lamp'));
     const failed = checkConditions(borrowed, solveDc(borrowed), circuitTaskOf('m1-divider-task').conditions);
     expect(failed.some((check) => !check.passed)).toBe(true);
+  });
+});
+
+describe('Схема-задания М2 решаемы: эталон-решения проходят все условия (тикет 13)', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    return circuitTaskIn(module2, id);
+  }
+
+  /**
+   * Кольцо с прямым включением диода: «плюс» батареи — на вывод 0 (анод)
+   * первого Компонента, дальше по цепочке к «минусу». В обычном ring() ток
+   * входит в каждый Компонент со стороны вывода 1 — диоды там заперты.
+   */
+  function forwardRing(a: PlacedComponent, b: PlacedComponent): CanvasState {
+    const battery = comp('bat', 'battery');
+    return {
+      components: [a, b, battery],
+      wires: [
+        { id: 'w1', from: { componentId: 'bat', pin: 0 }, to: { componentId: a.id, pin: 0 } },
+        { id: 'w2', from: { componentId: a.id, pin: 1 }, to: { componentId: b.id, pin: 0 } },
+        { id: 'w3', from: { componentId: b.id, pin: 1 }, to: { componentId: 'bat', pin: 1 } },
+      ],
+    };
+  }
+
+  it('«зажги светодиод»: светодиод + резистор 1 кОм в прямом включении дают ток в границах', () => {
+    assertSolvable(
+      circuitTaskOf('m2-led-resistor'),
+      forwardRing(comp('led', 'led'), comp('r1', 'resistor')),
+    );
+  });
+
+  it('«зажги светодиод»: обратное включение светодиода решение не проходит (направление измеряется)', () => {
+    const canvas = ring(comp('led', 'led', { color: 'red' }), comp('bat', 'battery'), comp('r1', 'resistor'));
+    const failed = checkConditions(canvas, solveDc(canvas), circuitTaskOf('m2-led-resistor').conditions);
+    expect(failed.some((check) => !check.passed)).toBe(true);
+  });
+
+  it('диод в прямом направлении: ток в границах с резистором по умолчанию', () => {
+    assertSolvable(
+      circuitTaskOf('m2-diode-forward'),
+      forwardRing(comp('d', 'diode'), comp('r1', 'resistor')),
+    );
+  });
+});
+
+describe('Палитра М2 привязана к Прогрессу (тикет 13)', () => {
+  /** Прогресс, в котором перечисленные Задания пройдены. */
+  function passed(...taskIds: readonly string[]) {
+    return taskIds.reduce(
+      (progress, taskId) => progressReducer(progress, { type: 'task-passed', taskId }),
+      emptyProgress,
+    );
+  }
+
+  it('пока М1 не пройдена, Компонентов М2 в открытой Палитре нет', () => {
+    const palette = sandboxPaletteOf(course, emptyProgress);
+    // Палитра М1 целиком (порядок — по объявлениям Палитр Заданий)
+    expect([...palette].sort()).toEqual([...module1Palette].sort());
+    expect(palette).not.toContain('diode');
+    expect(palette).not.toContain('led');
+  });
+
+  it('Модуль М2 открылся — диод и светодиод приходят в Песочницу', () => {
+    const progress = passed(...module1.tasks.map((task) => task.id));
+    const palette = sandboxPaletteOf(course, progress);
+    expect(palette).toContain('led');
+    expect(palette).toContain('diode');
+    // пройденные Модули свои Компоненты не теряют
+    expect(module1Palette.every((kind: ComponentKind) => palette.includes(kind))).toBe(true);
+  });
+
+  it('Палитра Модуля М2 — его Схема-задания объявляют диод и светодиод', () => {
+    const palette = sandboxPaletteOf(course, passed(...course.modules.flatMap((m) => m.tasks.map((t) => t.id))));
+    expect(palette.filter((kind) => kind === 'diode' || kind === 'led')).toEqual(['led', 'diode']);
   });
 });

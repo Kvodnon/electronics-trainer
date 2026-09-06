@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import type { ComponentKind, PlacedComponent, PinRef, Wire, CanvasState } from './canvas';
+import type { CanvasState, ComponentKind, LedColor, PlacedComponent, PinRef, Wire } from './canvas';
 import { defaultValuesOf } from './canvas';
 import {
   BATTERY_INTERNAL_RESISTANCE,
+  DIODE_FORWARD_VOLTAGE,
+  DIODE_ON_RESISTANCE,
   isLampLit,
+  isLedLit,
   isMotorSpinning,
   lampBrightness,
+  ledBrightness,
+  LED_FORWARD_VOLTAGE,
+  LED_FULL_CURRENT,
+  LED_LIT_CURRENT,
   readingOf,
   readingsOfKind,
   solveDc,
@@ -318,5 +325,124 @@ describe('lampBrightness: яркость от мощности', () => {
     expect(half).toBeGreaterThan(0);
     expect(half).toBeLessThan(1);
     expect(full).toBe(1);
+  });
+});
+
+describe('Диод и светодиод: кусочно-линейные модели (М2)', () => {
+  /** Кольцо батарея → A → B → батарея: «плюс» батареи — на вывод 0 A (прямое включение A). */
+  function ringOf(a: PlacedComponent, b: PlacedComponent): CanvasState {
+    return canvasOf(
+      [component('b', 'battery'), a, b],
+      [
+        wire('w1', pin('b', 0), pin(a.id, 0)),
+        wire('w2', pin(a.id, 1), pin(b.id, 0)),
+        wire('w3', pin(b.id, 1), pin('b', 1)),
+      ],
+    );
+  }
+
+  it('светодиод в прямом направлении: ток по кусочно-линейной модели, падение около порога', () => {
+    // (9 − 1,8) В на резистор 1000 Ом и проводящий диод: I = (U − Uпорога)/(R + rон + rбат)
+    const expectedCurrent =
+      (9 - LED_FORWARD_VOLTAGE.red) / (1000 + DIODE_ON_RESISTANCE + BATTERY_INTERNAL_RESISTANCE);
+    const solution = solveDc(
+      ringOf(component('led', 'led'), component('r', 'resistor', { resistance: 1000 })),
+    );
+    const led = readingOf(solution, 'led')!;
+    expectCloseTo(led.current, expectedCurrent);
+    expectCloseTo(led.voltage, LED_FORWARD_VOLTAGE.red + expectedCurrent * DIODE_ON_RESISTANCE);
+    expect(led.current).toBeGreaterThan(0);
+  });
+
+  it('светодиод в обратном направлении: заперт, тока нет, всё напряжение на нём', () => {
+    // разворот светодиода: катод (вывод 1) — к «плюсу» батареи
+    const solution = solveDc(
+      canvasOf(
+        [component('b', 'battery'), component('led', 'led'), component('r', 'resistor', { resistance: 1000 })],
+        [
+          wire('w1', pin('b', 0), pin('led', 1)),
+          wire('w2', pin('led', 0), pin('r', 0)),
+          wire('w3', pin('r', 1), pin('b', 1)),
+        ],
+      ),
+    );
+    const led = readingOf(solution, 'led')!;
+    expect(led.current).toBe(0);
+    expectCloseTo(led.voltage, -9, 0.01);
+    expect(readingOf(solution, 'r')!.current).toBe(0);
+  });
+
+  it('напряжение ниже прямого порога — светодиод не проводит вовсе', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery', { voltage: 1.5 }), component('led', 'led'), component('r', 'resistor', { resistance: 100 })],
+      [
+        wire('w1', pin('b', 0), pin('led', 0)),
+        wire('w2', pin('led', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const solution = solveDc(canvas);
+    expect(readingOf(solution, 'led')!.current).toBe(0);
+  });
+
+  it('порог зависит от цвета: при 2 В красный проводит, синий ещё заперт', () => {
+    const build = (color: LedColor): CanvasState =>
+      canvasOf(
+        [component('b', 'battery', { voltage: 2 }), component('led', 'led', { color }), component('r', 'resistor', { resistance: 100 })],
+        [
+          wire('w1', pin('b', 0), pin('led', 0)),
+          wire('w2', pin('led', 1), pin('r', 0)),
+          wire('w3', pin('r', 1), pin('b', 1)),
+        ],
+      );
+    const red = solveDc(build('red'));
+    expectCloseTo(
+      readingOf(red, 'led')!.current,
+      (2 - LED_FORWARD_VOLTAGE.red) / (100 + DIODE_ON_RESISTANCE + BATTERY_INTERNAL_RESISTANCE),
+    );
+    const blue = solveDc(build('blue'));
+    expect(readingOf(blue, 'led')!.current).toBe(0);
+  });
+
+  it('диод: прямое включение проводит с падением около 0,7 В, обратное заперт', () => {
+    const forward = solveDc(
+      canvasOf(
+        [component('d', 'diode'), component('r', 'resistor', { resistance: 1000 }), component('b', 'battery')],
+        [
+          wire('w1', pin('b', 0), pin('d', 0)),
+          wire('w2', pin('d', 1), pin('r', 0)),
+          wire('w3', pin('r', 1), pin('b', 1)),
+        ],
+      ),
+    );
+    const forwardReading = readingOf(forward, 'd')!;
+    const expectedCurrent =
+      (9 - DIODE_FORWARD_VOLTAGE) / (1000 + DIODE_ON_RESISTANCE + BATTERY_INTERNAL_RESISTANCE);
+    expectCloseTo(forwardReading.current, expectedCurrent);
+    expectCloseTo(forwardReading.voltage, DIODE_FORWARD_VOLTAGE + expectedCurrent * DIODE_ON_RESISTANCE);
+
+    const reversed = solveDc(
+      canvasOf(
+        [component('d', 'diode'), component('r', 'resistor', { resistance: 1000 }), component('b', 'battery')],
+        [
+          wire('w1', pin('b', 0), pin('d', 1)),
+          wire('w2', pin('d', 0), pin('r', 0)),
+          wire('w3', pin('r', 1), pin('b', 1)),
+        ],
+      ),
+    );
+    expect(readingOf(reversed, 'd')!.current).toBe(0);
+    expect(readingOf(reversed, 'r')!.current).toBe(0);
+  });
+
+  it('свечение светодиода — от прямого тока: ниже порога не виден, выше — насыщается', () => {
+    const base = { componentId: 'led', kind: 'led' as const, voltage: 2, power: 0.02 };
+    expect(ledBrightness({ ...base, current: 0.0005 })).toBe(0);
+    expect(isLedLit({ ...base, current: 0.0005 })).toBe(false);
+    expect(isLedLit({ ...base, current: LED_LIT_CURRENT })).toBe(true);
+    expect(ledBrightness({ ...base, current: LED_FULL_CURRENT / 2 })).toBeCloseTo(0.5);
+    expect(ledBrightness({ ...base, current: 0.05 })).toBe(1);
+    // обратный ток (запертый диод) свечения не даёт
+    expect(ledBrightness({ ...base, current: -0.01 })).toBe(0);
   });
 });

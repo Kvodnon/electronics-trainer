@@ -1116,6 +1116,18 @@ body {
   height: 16px;
 }
 
+.canvas-color-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.canvas-color-field select {
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
 .canvas-hint {
   margin: 14px 0 0;
   color: var(--text-muted);
@@ -1363,6 +1375,13 @@ body {
 
 .symbol-lamp-glow {
   fill: #ffd75e;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+/* Живое поведение: свечение светодиода от тока (заливка — цвет свечения, из символа) */
+
+.symbol-led-glow {
   filter: blur(6px);
   pointer-events: none;
 }
