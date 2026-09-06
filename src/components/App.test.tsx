@@ -360,7 +360,7 @@ describe('Песочница', () => {
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
-    await user.click(screen.getByRole('button', { name: '← К Модулям' }));
+    await user.click(screen.getByRole('button', { name: '← К Курсу' }));
 
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();

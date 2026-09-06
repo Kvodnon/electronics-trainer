@@ -9,23 +9,17 @@ import { clampPosition, snapToGrid } from './canvasGeometry';
 export const PIN_COUNT = 2;
 
 /** Виды Компонентов Палитры М1. Растёт вместе с Модулями (М2+). */
-export type ComponentKind =
-  | 'battery'
-  | 'resistor'
-  | 'lamp'
-  | 'switch'
-  | 'pushbutton'
-  | 'motor';
-
-/** Все виды Компонентов — для проверок данных извне домена (хранилище схем). */
-export const componentKinds: readonly ComponentKind[] = [
+export const componentKinds = [
   'battery',
   'resistor',
   'lamp',
   'switch',
   'pushbutton',
   'motor',
-];
+] as const;
+
+/** Тип выводится из списка: список и тип не могут разойтись. */
+export type ComponentKind = (typeof componentKinds)[number];
 
 /** Это вид Компонента Палитры? */
 export function isComponentKind(value: unknown): value is ComponentKind {

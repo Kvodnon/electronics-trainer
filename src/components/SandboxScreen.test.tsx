@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { render, screen, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
-import { module1Palette } from '../content/m1';
+import { module1 } from '../content/m1';
+import { modulePaletteOf } from '../domain/course';
 import { upsertCircuit, type SavedCircuit } from '../domain/sandbox';
 import type { SymbolStandard } from '../domain/symbols';
 import { wireRing } from '../testing/navigation';
@@ -14,14 +15,14 @@ import { SandboxScreen } from './SandboxScreen';
  * сохранение/загрузка/удаление именованных схем. Домен не мокается.
  */
 
-/** Обвязка как в App: список схем и стандарт живут выше экрана. */
+/** Обвязка как в App: список схем, палитра и стандарт живут выше экрана. */
 function renderSandbox() {
   function Harness() {
     const [standard, setStandard] = useState<SymbolStandard>('gost');
     const [circuits, setCircuits] = useState<readonly SavedCircuit[]>([]);
     return (
       <SandboxScreen
-        palette={module1Palette}
+        palette={modulePaletteOf(module1)}
         circuits={circuits}
         onSaveCircuit={(name, canvas) => setCircuits((current) => upsertCircuit(current, name, canvas))}
         onDeleteCircuit={(circuitId) =>

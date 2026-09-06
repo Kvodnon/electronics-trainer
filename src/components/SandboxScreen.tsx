@@ -1,6 +1,6 @@
 import { useReducer, useState } from 'react';
 import { canvasReducer, emptyHistory, type CanvasState, type ComponentKind } from '../domain/canvas';
-import type { SavedCircuit } from '../domain/sandbox';
+import { isValidCircuitName, type SavedCircuit } from '../domain/sandbox';
 import type { SymbolStandard } from '../domain/symbols';
 import { CanvasEditor } from './canvas/CanvasEditor';
 import { useLiveCircuit, useMultimeter } from './canvas/liveCircuit';
@@ -19,11 +19,11 @@ interface SandboxScreenProps {
 }
 
 /**
- * Песочница (CONTEXT.md): свободный режим без Заданий и проверки. Та же
- * кинематика Холста, что у Схема-задания — живое поведение, Мультиметр,
- * переключатель стандарта, — но без «Проверить», оверлея и вердиктов:
- * Симулятор считается на каждое изменение схемы сам по себе. Рядом —
- * «Мои схемы»: сохранение под именем, загрузка и удаление.
+ * Песочница (CONTEXT.md): режим без Заданий и проверки. Та же кинематика
+ * Холста, что у Схема-задания — живое поведение, Мультиметр, переключатель
+ * стандарта, — но без «Проверить», оверлея и вердиктов: Симулятор считается
+ * на каждое изменение схемы сам по себе. Рядом — «Мои схемы»: сохранение
+ * под именем, загрузка и удаление.
  */
 export function SandboxScreen({
   palette,
@@ -44,9 +44,8 @@ export function SandboxScreen({
   }
 
   function saveCircuit() {
-    const cleanName = name.trim();
-    if (cleanName === '') return;
-    onSaveCircuit(cleanName, history.present);
+    if (!isValidCircuitName(name)) return;
+    onSaveCircuit(name, history.present);
     setName('');
   }
 
@@ -54,7 +53,7 @@ export function SandboxScreen({
     <div className="sandbox-screen">
       <header className="module-header">
         <button type="button" className="link-back" onClick={onExit}>
-          ← К Модулям
+          ← К Курсу
         </button>
         <h2 className="module-header-title">Песочница</h2>
       </header>
@@ -90,7 +89,7 @@ export function SandboxScreen({
       <SandboxCircuits
         circuits={circuits}
         name={name}
-        canSave={name.trim() !== ''}
+        canSave={isValidCircuitName(name)}
         onNameChange={setName}
         onSave={saveCircuit}
         onLoad={loadCircuit}
@@ -131,7 +130,7 @@ function SandboxCircuits({
         }}
       >
         <input
-          className="numeric-input-field sandbox-name-field"
+          className="sandbox-name-field"
           aria-label="Название схемы"
           placeholder="Название схемы"
           value={name}

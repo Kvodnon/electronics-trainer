@@ -14,16 +14,15 @@ export interface SavedCircuit {
 
 /**
  * Сохранение схемы под именем: занятое имя перезаписывается (id и место
- * в списке не меняются), новое — добавляется в конец. Пустое имя (после
- * обрезки пробелов) — сохранения нет. Чистая функция.
+ * в списке не меняются), новое — добавляется в конец. Чистая функция.
  */
 export function upsertCircuit(
   circuits: readonly SavedCircuit[],
   name: string,
   canvas: CanvasState,
 ): readonly SavedCircuit[] {
+  if (!isValidCircuitName(name)) return circuits;
   const cleanName = name.trim();
-  if (cleanName === '') return circuits;
   const existing = circuits.findIndex((circuit) => circuit.name === cleanName);
   if (existing !== -1) {
     return circuits.map((circuit, index) =>
@@ -31,6 +30,20 @@ export function upsertCircuit(
     );
   }
   return [...circuits, { id: nextCircuitId(circuits), name: cleanName, canvas }];
+}
+
+/** Удаление схемы по идентификатору; нет такой — тот же список (то же сравнение). */
+export function removeCircuit(
+  circuits: readonly SavedCircuit[],
+  circuitId: string,
+): readonly SavedCircuit[] {
+  const next = circuits.filter((circuit) => circuit.id !== circuitId);
+  return next.length === circuits.length ? circuits : next;
+}
+
+/** Единственное правило имени: непустое после обрезки пробелов. */
+export function isValidCircuitName(name: string): boolean {
+  return name.trim() !== '';
 }
 
 /** Следующий свободный идентификатор: s1, s2… по максимуму существующих. */

@@ -4,7 +4,7 @@ import { ModuleScreen } from './components/ModuleScreen';
 import { SandboxScreen } from './components/SandboxScreen';
 import { course } from './content/course';
 import { emptyProgress, progressReducer, sandboxPaletteOf } from './domain/course';
-import { upsertCircuit } from './domain/sandbox';
+import { removeCircuit, upsertCircuit } from './domain/sandbox';
 import type { CanvasState } from './domain/canvas';
 import { defaultSymbolStandard, type SymbolStandard } from './domain/symbols';
 import { loadProgress, saveProgress } from './storage/progressStorage';
@@ -49,7 +49,7 @@ export function App() {
   }
 
   function handleDeleteCircuit(circuitId: string) {
-    setCircuits((current) => current.filter((circuit) => circuit.id !== circuitId));
+    setCircuits((current) => removeCircuit(current, circuitId));
   }
 
   const module =

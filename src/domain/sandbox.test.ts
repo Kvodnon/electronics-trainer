@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canvasReducer, emptyHistory, emptyCanvas, type CanvasState } from './canvas';
-import { upsertCircuit, type SavedCircuit } from './sandbox';
+import { isValidCircuitName, removeCircuit, upsertCircuit, type SavedCircuit } from './sandbox';
 
 /**
  * Сохранённые схемы Песочницы — домен поверх Холста: имя и снимок схемы.
@@ -63,5 +63,23 @@ describe('Сохранение именованных схем', () => {
 
     expect(original).toEqual(snapshot);
     expect(canvas.components).toHaveLength(1);
+  });
+});
+
+describe('Удаление и правило имени', () => {
+  it('удаление убирает только схему с этим id; незнакомый id ничего не меняет', () => {
+    let circuits = upsertCircuit([], 'А', canvasWithBattery());
+    circuits = upsertCircuit(circuits, 'Б', canvasWithLamp());
+
+    const withoutFirst = removeCircuit(circuits, circuits[0].id);
+    expect(withoutFirst.map((circuit) => circuit.name)).toEqual(['Б']);
+    expect(removeCircuit(circuits, 's404')).toBe(circuits);
+  });
+
+  it('имя валидно, если после обрезки пробелов оно непусто', () => {
+    expect(isValidCircuitName('Кольцо')).toBe(true);
+    expect(isValidCircuitName('  Кольцо ')).toBe(true);
+    expect(isValidCircuitName('   ')).toBe(false);
+    expect(isValidCircuitName('')).toBe(false);
   });
 });

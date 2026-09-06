@@ -593,6 +593,18 @@ body {
 .sandbox-name-field {
   width: 240px;
   padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-raised);
+  color: var(--text);
+  font-family: var(--monospace);
+  font-size: 15px;
+}
+
+.sandbox-name-field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent-dim);
 }
 
 .sandbox-save .button-primary:disabled {
