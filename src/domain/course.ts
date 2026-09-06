@@ -122,7 +122,7 @@ export function moduleProgressOf(module: CourseModule, progress: CourseProgress)
     returnedForRetry,
     solvedOnFirstAttempt,
     // Пустой Модуль завершён «пусто»: иначе он заблокировал бы Курс навсегда.
-    // Непустоту Модулей гарантирует контент-линтер (тикет 12).
+    // Непустоту Модулей гарантирует контент-линтер (src/content/contentLint.test.ts).
     completed: passed === module.tasks.length,
   };
 }

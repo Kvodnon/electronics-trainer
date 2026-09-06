@@ -4,13 +4,23 @@ import userEvent from '@testing-library/user-event';
 type User = ReturnType<typeof userEvent.setup>;
 
 /**
+ * Проводит ученика через карточки Теории Модуля к Заданиям:
+ * «Дальше» на всех карточках, кроме последней, затем «К Заданиям».
+ */
+export async function passTheory(user: User, cards: number): Promise<void> {
+  for (let index = 0; index < cards - 1; index += 1) {
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  }
+  await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+}
+
+/**
  * Проводит ученика с экрана Курса к Заданиям М1:
- * «Начать» → две карточки Теории («Дальше», затем «К Заданиям»).
+ * «Начать» → четыре карточки Теории → «К Заданиям».
  */
 export async function enterModule1Tasks(user: User): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Начать' }));
-  await user.click(screen.getByRole('button', { name: 'Дальше' }));
-  await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+  await passTheory(user, 4);
 }
 
 /**

@@ -46,7 +46,7 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(reviewQuadrupled).toHaveTextContent(/P = U² \/ R/);
   });
 
-  it('верный ответ → «Дальше» ведёт к числовому Вопросу, за ним — Экзамен Модуля', async () => {
+  it('верный ответ → «Дальше» ведёт к числовому Вопросу, за ним — следующий Вопрос Модуля', async () => {
     const user = userEvent.setup();
     render(<App />);
     await enterModule1Tasks(user);
@@ -63,7 +63,7 @@ describe('Вопрос с выбором варианта: поток от от�
     await user.click(screen.getByRole('button', { name: 'Ответить' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    // За Вопросами — финальное Схема-задание Модуля: Экзамен
-    expect(screen.getByText('Экзамен')).toBeInTheDocument();
+    // Очередь продолжается третьим Вопросом Модуля
+    expect(screen.getByText(/4,7 кОм/)).toBeInTheDocument();
   });
 });

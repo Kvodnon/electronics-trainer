@@ -2,11 +2,13 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
+import { module1 } from '../content/m1';
 import { parseBackup } from '../domain/backup';
 import { stubDownload } from '../testing/fileDownload';
 import {
   closeSwitch,
   enterModule1Tasks,
+  passTheory,
   setResistance,
   wireRing,
 } from '../testing/navigation';
@@ -15,6 +17,19 @@ import {
 // Прогресс восстанавливается из localStorage. Скачивание файла перехватывает
 // заглушка из src/testing — содержимое при этом настоящий Blob.
 
+/** Сеет Прогресс М1: все Задания пройдены, кроме перечисленных в except. */
+function seedModule1Progress(except: readonly string[] = []): void {
+  const taskStates = Object.fromEntries(
+    module1.tasks
+      .filter((task) => !except.includes(task.id))
+      .map((task) => [task.id, 'passed']),
+  );
+  window.localStorage.setItem(
+    'electronics-trainer.progress.v1',
+    JSON.stringify({ taskStates }),
+  );
+}
+
 describe('Экран Курса', () => {
   it('показывает Модули с Прогрессом; следующий lockedButton', () => {
     render(<App />);
@@ -22,8 +37,9 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю: в М1 — Вопрос, Вопрос и Экзамен, в М2 — так же
-    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, витрина М2 — 3
+    expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
@@ -41,7 +57,7 @@ describe('Теория перед Заданиями Модуля', () => {
     await user.click(screen.getByRole('button', { name: 'Начать' }));
 
     // Первая карточка: два Компонента × два стандарта
-    expect(screen.getByText('Теория · карточка 1 из 2')).toBeInTheDocument();
+    expect(screen.getByText('Теория · карточка 1 из 4')).toBeInTheDocument();
     expect(screen.getByText('Резистор')).toBeInTheDocument();
     expect(screen.getByText('Источник постоянного напряжения')).toBeInTheDocument();
     const symbolFigures = screen.getAllByRole('img', { name: /Обозначение: стандарт/ });
@@ -49,12 +65,14 @@ describe('Теория перед Заданиями Модуля', () => {
     expect(screen.getAllByText('ГОСТ / IEC')).toHaveLength(2);
     expect(screen.getAllByText('ANSI')).toHaveLength(2);
 
-    // Вторая карточка: формулы
+    // Вторая карточка: формулы закона Ома
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    expect(screen.getByText('Теория · карточка 2 из 2')).toBeInTheDocument();
+    expect(screen.getByText('Теория · карточка 2 из 4')).toBeInTheDocument();
     expect(screen.getByText('I = U / R')).toBeInTheDocument();
 
-    // Переход к Заданиям
+    // Последняя карточка ведёт к Заданиям
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
     await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
     expect(screen.getByText(/удвоили напряжение источника/)).toBeInTheDocument();
   });
@@ -76,20 +94,19 @@ describe('Прогресс между сессиями', () => {
     render(<App />);
 
     // Курс помнит Прогресс М1; М2 всё ещё заблокирована
-    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
     // Очередь продолжается со второго Задания
     await user.click(screen.getByRole('button', { name: 'Продолжить' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await passTheory(user, 4);
     expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
     expect(screen.queryByText(/удвоили напряжение источника/)).not.toBeInTheDocument();
   });
 });
 
 describe('Повтор ошибок внутри Модуля', () => {
-  it('ошибленное Задание возвращается в конце, следующее идёт вперёд, Экзамен открывается последним', async () => {
+  it('ошибленное Задание возвращается в конец очереди, очередь продолжается вперёд', async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -107,20 +124,15 @@ describe('Повтор ошибок внутри Модуля', () => {
     expect(screen.getByText(/на повторении: 1/)).toBeInTheDocument();
     expect(screen.getByTitle('Задание 1 — на повторении')).toBeInTheDocument();
 
-    // Второе закрыто верно с первой попытки → очередь возвращается к первому
+    // Второе закрыто верно с первой попытки → очередь продолжается третьим:
+    // ошибленное первое вернётся только после всех не начатых Заданий
     await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
     await user.click(screen.getByRole('button', { name: 'Ответить' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    expect(screen.getByText(/удвоили напряжение источника/)).toBeInTheDocument();
+    expect(screen.getByText(/4,7 кОм/)).toBeInTheDocument();
+    expect(screen.getByTitle('Задание 1 — на повторении')).toBeInTheDocument();
     expect(screen.getByTitle('Задание 2 — решено с первой попытки')).toBeInTheDocument();
-    expect(screen.getByText(/с первой попытки: 1/)).toBeInTheDocument();
-
-    // Первое решено со второй попытки → в Модуле остаётся только Экзамен
-    await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    expect(screen.getByText('Экзамен')).toBeInTheDocument();
-    expect(screen.getByTitle('Задание 1 — пройдено')).toBeInTheDocument();
-    expect(screen.getByTitle('Экзамен — не начато')).toBeInTheDocument();
+    expect(screen.getByTitle('Экзамен — откроется после остальных Заданий')).toBeInTheDocument();
   });
 });
 
@@ -165,38 +177,34 @@ describe('Лестница Подсказок', () => {
 describe('Экзамен Модуля', () => {
   it('экзамен закрыт, пока не закрыты остальные Задания, и открывается последним', async () => {
     const user = userEvent.setup();
-    render(<App />);
+    const firstRender = render(<App />);
     await enterModule1Tasks(user);
 
-    // Пока Вопросы не пройдены, экзамен в очереди не показывается вовсе
+    // Пока остальные Задания не пройдены, экзамен в очереди не показывается вовсе
     expect(screen.queryByText('Экзамен')).not.toBeInTheDocument();
+    firstRender.unmount();
 
-    await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
-    await user.click(screen.getByRole('button', { name: 'Ответить' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-
-    // Все остальные Задания закрыты — экзамен открылся последним
+    // Все Задания, кроме Экзамена, закрыты — Экзамен открылся последним
+    seedModule1Progress(['m1-exam']);
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Продолжить' }));
+    await passTheory(user, 4);
     expect(screen.getByText('Экзамен')).toBeInTheDocument();
     expect(screen.getByTitle('Экзамен — не начато')).toBeInTheDocument();
 
     // Экзамен не сдан — Модуль не завершён: М2 всё ещё заблокирована
     await user.click(screen.getByRole('button', { name: '← К Модулям' }));
+    expect(screen.getByText('Заданий пройдено: 21 из 22')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
   });
 
   it('неудачная проверка Экзамена портит «первую попытку», сдача завершает Модуль и открывает следующий', async () => {
     const user = userEvent.setup();
+    seedModule1Progress(['m1-exam']);
     render(<App />);
 
-    // Оба Вопроса М1 — верно, с первой попытки
-    await enterModule1Tasks(user);
-    await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
-    await user.click(screen.getByRole('button', { name: 'Ответить' }));
-    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await user.click(screen.getByRole('button', { name: 'Продолжить' }));
+    await passTheory(user, 4);
 
     // Экзамен — финальное Схема-задание Модуля
     expect(screen.getByText('Экзамен')).toBeInTheDocument();
@@ -220,7 +228,7 @@ describe('Экзамен Модуля', () => {
     // Экзамен сдан — Модуль завершён, следующий открыт
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
     expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
-    expect(screen.getByText(/с первой попытки: 2/)).toBeInTheDocument();
+    expect(screen.getByText(/с первой попытки: 21/)).toBeInTheDocument();
     expect(screen.getByTitle('Экзамен — пройдено')).toBeInTheDocument();
     expect(screen.queryByTitle('Экзамен — решён с первой попытки')).not.toBeInTheDocument();
 
@@ -233,12 +241,7 @@ describe('Схема-задание в потоке Курса', () => {
   it('М1 сдана → М2: Теория, Вопрос, Схема-задание и Экзамен — Курс завершается', async () => {
     const user = userEvent.setup();
     // М1 закрыта заранее — сразу к М2
-    window.localStorage.setItem(
-      'electronics-trainer.progress.v1',
-      JSON.stringify({
-        taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'passed', 'm1-exam': 'passed' },
-      }),
-    );
+    seedModule1Progress();
     render(<App />);
 
     await user.click(screen.getByRole('button', { name: 'Начать' }));
@@ -282,12 +285,7 @@ describe('Схема-задание в потоке Курса', () => {
 describe('Стандарт обозначений между сессиями', () => {
   it('выбор ANSI в Задании сохраняется, переживает перезагрузку и применяется к следующему Заданию', async () => {
     // М1 закрыта заранее — сразу к Схема-заданию М2
-    window.localStorage.setItem(
-      'electronics-trainer.progress.v1',
-      JSON.stringify({
-        taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'passed', 'm1-exam': 'passed' },
-      }),
-    );
+    seedModule1Progress();
     const user = userEvent.setup();
     const firstRender = render(<App />);
 
@@ -439,13 +437,14 @@ describe('Данные: экспорт, импорт и сброс', () => {
     // Переустановка системы или новый браузер: хранилище пусто
     window.localStorage.clear();
     const secondRender = render(<App />);
-    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+    expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
 
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
     expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
 
     // Прогресс Курса вернулся, М2 снова закрыта до поры
-    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Продолжить' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
@@ -466,7 +465,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile('{не json'));
     expect(await screen.findByRole('alert')).toHaveTextContent('не удаётся прочитать JSON');
 
-    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
     expect(screen.getByText('Кольцо')).toBeInTheDocument();
   });
@@ -490,15 +489,16 @@ describe('Данные: экспорт, импорт и сброс', () => {
     // Без подтверждения ничего не стирается
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     expect(screen.getByText(/Удалить весь Прогресс/)).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Отмена' }));
-    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
 
     // Подтверждение — Прогресс обнуляется, схема Песочницы выживает
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
-    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+    expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
@@ -508,6 +508,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     // Пустой Прогресс переживает перезагрузку
     firstRender.unmount();
     render(<App />);
-    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+    expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 3')).toBeInTheDocument();
   });
 });

@@ -279,7 +279,9 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
       tabIndex={0}
       aria-label="Холст: соберите схему"
       onKeyDown={handleKeyDown}
-      onMouseDown={() => rootRef.current?.focus()}
+      // preventScroll: иначе фокус прыгает скроллом к верху редактора, кнопка
+      // Палитры уходит из-под курсора и клик не доходит (короткое окно).
+      onMouseDown={() => rootRef.current?.focus({ preventScroll: true })}
     >
       <div className="palette" role="group" aria-label="Палитра Компонентов">
         {palette.map((kind) => (
