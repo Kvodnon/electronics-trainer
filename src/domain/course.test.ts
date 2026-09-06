@@ -4,13 +4,16 @@ import {
   examOf,
   isExamUnlocked,
   isModuleLocked,
+  modulePaletteOf,
   moduleProgressOf,
   moduleTaskQueue,
   progressReducer,
+  sandboxPaletteOf,
   solvedOnFirstAttemptOf,
   taskStateOf,
 } from './course';
 import type { CourseData, CourseProgress } from './course';
+import type { ComponentKind } from './canvas';
 import type { CircuitTask, Task } from './task';
 
 // Фикстура: Курс из двух Модулей; в первом — два Вопроса и Экзамен.
@@ -282,5 +285,56 @@ describe('Решено с первой попытки', () => {
     const moduleProgress = moduleProgressOf(course.modules[0], progress);
     expect(moduleProgress.passed).toBe(1);
     expect(moduleProgress.solvedOnFirstAttempt).toBe(1);
+  });
+});
+
+describe('Палитра Песочницы: растёт с Прогрессом Курса', () => {
+  // Фикстура с различающимися Палитрами: у М2 — свои Компоненты.
+  function makeCircuit(id: string, palette: readonly ComponentKind[]): CircuitTask {
+    return { kind: 'circuit-task', id, prompt: id, palette, conditions: [] };
+  }
+
+  const paletteCourse: CourseData = {
+    modules: [
+      {
+        id: 'p1',
+        title: 'Первый',
+        summary: '',
+        theory: [],
+        tasks: [makeTask('p1-q'), makeCircuit('p1-c', ['battery', 'resistor'])],
+      },
+      {
+        id: 'p2',
+        title: 'Второй',
+        summary: '',
+        theory: [],
+        tasks: [makeCircuit('p2-c', ['battery', 'lamp', 'switch'])],
+      },
+    ],
+  };
+
+  it('Палитра Модуля — объединение Палитр его Схема-заданий', () => {
+    expect(modulePaletteOf(paletteCourse.modules[0])).toEqual(['battery', 'resistor']);
+  });
+
+  it('в начале Курса открыта только Палитра первого Модуля', () => {
+    expect(sandboxPaletteOf(paletteCourse, emptyProgress)).toEqual(['battery', 'resistor']);
+  });
+
+  it('после прохождения Модуля его Компоненты остаются, Компоненты следующего открываются', () => {
+    const progress = passed('p1-q', 'p1-c');
+    expect(sandboxPaletteOf(paletteCourse, progress)).toEqual([
+      'battery',
+      'resistor',
+      'lamp',
+      'switch',
+    ]);
+  });
+
+  it('дубликаты видов между Модулями не задваиваются, порядок устойчив', () => {
+    const progress = passed('p1-q', 'p1-c');
+    expect(sandboxPaletteOf(course, progress)).toEqual(
+      sandboxPaletteOf(course, passed(...course.modules.flatMap((m) => m.tasks.map((t) => t.id)))),
+    );
   });
 });

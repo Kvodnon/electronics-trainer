@@ -1,27 +1,14 @@
 import { useReducer, useMemo, useState } from 'react';
 import type { CircuitTask } from '../../domain/task';
-import { canvasReducer, emptyHistory, type CanvasState, type PinRef } from '../../domain/canvas';
+import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
-import { symbolStandards } from '../../domain/symbols';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import { HintLadder } from '../HintLadder';
-import {
-  readingsByComponent,
-  solveDc,
-  wireCurrents,
-  type ComponentReading,
-  type DcSolution,
-} from '../../domain/simulator';
-import {
-  emptyProbes,
-  measure,
-  type MultimeterMode,
-  type MultimeterProbes,
-} from '../../domain/multimeter';
-import { formatQuantity } from '../../domain/quantity';
+import { readingsByComponent, wireCurrents } from '../../domain/simulator';
+import { useLiveCircuit, useMultimeter } from './liveCircuit';
+import { MultimeterControls, StandardControls } from './ToolbarControls';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
-import { standardTitles } from './CanvasSymbols';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
@@ -40,9 +27,9 @@ interface CircuitTaskScreenProps {
  * показывается, пока схема не изменилась — после правки Разбор снимается,
  * чтобы не врать устаревшими числами. Живое поведение (свечение лампочки,
  * вращение моторчика) и Мультиметр считаются по текущей схеме на каждое её
- * изменение; числовой оверлей и подсветка места ошибки — только по вердикту.
- * Стандарт обозначений приходит снаружи: переключатель меняет только
- * отрисовку, собранная схема остаётся как была.
+ * изменение (общие хуки с Песочницей); числовой оверлей и подсветка места
+ * ошибки — только по вердикту. Стандарт обозначений приходит снаружи:
+ * переключатель меняет только отрисовку, собранная схема остаётся как была.
  */
 export function CircuitTaskScreen({
   task,
@@ -58,58 +45,8 @@ export function CircuitTaskScreen({
   const [showReadings, setShowReadings] = useState(false);
   const shownEvaluation = submitted !== null && history.present === submitted ? evaluation : null;
 
-  /** Живое решение схемы: пересчёт на каждое изменение Холста; сбой — null. */
-  const liveSolution = useMemo<DcSolution | null>(() => {
-    try {
-      return solveDc(history.present);
-    } catch {
-      return null;
-    }
-  }, [history.present]);
-
-  /** Живое поведение Холста: лампочка светится, моторчик вращается. */
-  const liveReadings = useMemo(
-    () => (liveSolution === null ? new Map<string, ComponentReading>() : readingsByComponent(liveSolution)),
-    [liveSolution],
-  );
-
-  /** Мультиметр: включённость, режим и приложенные щупы (точки или ветвь). */
-  const [multimeterOn, setMultimeterOn] = useState(false);
-  const [multimeterMode, setMultimeterMode] = useState<MultimeterMode>('voltage');
-  const [probes, setProbes] = useState<MultimeterProbes>(emptyProbes);
-  /** Какой щуп приложится следующим кликом по точке: красный, затем чёрный. */
-  const [nextProbe, setNextProbe] = useState<'red' | 'black'>('red');
-
-  function clearProbes() {
-    setProbes(emptyProbes);
-    setNextProbe('red');
-  }
-
-  function toggleMultimeter(on: boolean) {
-    setMultimeterOn(on);
-    clearProbes();
-  }
-
-  function changeMultimeterMode(mode: MultimeterMode) {
-    setMultimeterMode(mode);
-    clearProbes();
-  }
-
-  function applyPinProbe(ref: PinRef) {
-    if (nextProbe === 'red') setProbes((current) => ({ ...current, red: ref }));
-    else setProbes((current) => ({ ...current, black: ref }));
-    setNextProbe(nextProbe === 'red' ? 'black' : 'red');
-  }
-
-  function applyBranchProbe(componentId: string) {
-    setProbes((current) => ({ ...current, branch: componentId }));
-  }
-
-  /** Показание Мультиметра: из живого решения, обновляется с любым изменением схемы. */
-  const multimeterResult = useMemo(
-    () => (multimeterOn ? measure(liveSolution, multimeterMode, probes) : { status: 'idle' as const }),
-    [multimeterOn, multimeterMode, probes, liveSolution],
-  );
+  const { solution: liveSolution, readings: liveReadings } = useLiveCircuit(history);
+  const multimeter = useMultimeter(liveSolution);
 
   /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
   const overlay = useMemo<CanvasOverlay | null>(() => {
@@ -147,55 +84,16 @@ export function CircuitTaskScreen({
         liveReadings={liveReadings}
         overlay={overlay}
         faultSpot={faultSpot}
-        multimeter={
-          multimeterOn
-            ? {
-                mode: multimeterMode,
-                probes,
-                onPinProbe: applyPinProbe,
-                onBranchProbe: applyBranchProbe,
-                onClearProbes: clearProbes,
-              }
-            : null
-        }
+        multimeter={multimeter.gestures}
         actions={
           <>
-            <label className="multimeter-toggle">
-              <input
-                type="checkbox"
-                checked={multimeterOn}
-                onChange={(event) => toggleMultimeter(event.target.checked)}
-              />
-              Мультиметр
-            </label>
-            {multimeterOn && (
-              <span className="multimeter">
-                <select
-                  className="multimeter-mode"
-                  aria-label="Режим мультиметра"
-                  value={multimeterMode}
-                  onChange={(event) => changeMultimeterMode(event.target.value as MultimeterMode)}
-                >
-                  <option value="voltage">Напряжение</option>
-                  <option value="current">Ток</option>
-                </select>
-                <output
-                  className={`multimeter-display${
-                    multimeterResult.status === 'unavailable' ? ' multimeter-display-unavailable' : ''
-                  }`}
-                  aria-live="polite"
-                  title={
-                    multimeterResult.status === 'unavailable'
-                      ? 'Между щупами нет общей цепи — измерение невозможно'
-                      : undefined
-                  }
-                >
-                  {multimeterResult.status === 'ok'
-                    ? formatQuantity(multimeterResult.reading.value, multimeterResult.reading.unit)
-                    : '—'}
-                </output>
-              </span>
-            )}
+            <MultimeterControls
+              on={multimeter.on}
+              mode={multimeter.mode}
+              result={multimeter.result}
+              onToggle={multimeter.toggle}
+              onModeChange={multimeter.changeMode}
+            />
             <label className="overlay-toggle">
               <input
                 type="checkbox"
@@ -205,22 +103,7 @@ export function CircuitTaskScreen({
               />
               Токи и напряжения
             </label>
-            <label className="standard-toggle">
-              Обозначения
-              <select
-                className="standard-select"
-                value={symbolStandard}
-                onChange={(event) =>
-                  onSymbolStandardChange(event.target.value as SymbolStandard)
-                }
-              >
-                {symbolStandards.map((standard) => (
-                  <option key={standard} value={standard}>
-                    {standardTitles[standard]}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <StandardControls standard={symbolStandard} onChange={onSymbolStandardChange} />
             <button type="button" className="button-primary canvas-check" onClick={check}>
               Проверить
             </button>

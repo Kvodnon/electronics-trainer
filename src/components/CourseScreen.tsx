@@ -6,19 +6,37 @@ interface CourseScreenProps {
   course: CourseData;
   progress: CourseProgress;
   onEnterModule: (moduleId: string) => void;
+  /** Песочница доступна с самого начала Курса. */
+  onOpenSandbox: () => void;
 }
 
 /**
- * Экран Курса: линейный список Модулей. Следующий Модуль заблокирован,
- * пока не пройден предыдущий; у каждого Модуля виден его Прогресс.
+ * Экран Курса: главный меню Тренажёра. Наверху — вход в Песочницу, ниже —
+ * линейный список Модулей. Следующий Модуль заблокирован, пока не пройден
+ * предыдущий; у каждого Модуля виден его Прогресс.
  */
-export function CourseScreen({ course, progress, onEnterModule }: CourseScreenProps) {
+export function CourseScreen({ course, progress, onEnterModule, onOpenSandbox }: CourseScreenProps) {
   return (
     <section className="course" aria-labelledby="course-heading">
       <h2 id="course-heading">Курс</h2>
       <p className="course-subtitle">
         Следующий Модуль открывается после прохождения предыдущего.
       </p>
+
+      <section className="panel sandbox-entry" aria-labelledby="sandbox-entry-heading">
+        <div className="sandbox-entry-text">
+          <h3 id="sandbox-entry-heading" className="module-title">
+            Песочница
+          </h3>
+          <p className="module-summary">
+            Свободные эксперименты без Заданий и проверки: Палитра открытых Компонентов,
+            Симулятор, Мультиметр и ваши сохранённые схемы.
+          </p>
+        </div>
+        <button type="button" className="button-primary" onClick={onOpenSandbox}>
+          Открыть
+        </button>
+      </section>
 
       <ul className="module-list">
         {course.modules.map((module, index) => {

@@ -537,6 +537,117 @@ body {
   cursor: not-allowed;
 }
 
+/* Вход в Песочницу на экране Курса */
+
+.sandbox-entry {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.sandbox-entry-text {
+  flex: 1;
+  min-width: 240px;
+}
+
+.sandbox-entry-text h3 {
+  margin: 0 0 4px;
+}
+
+.sandbox-entry-text p {
+  margin: 0;
+}
+
+.sandbox-entry .button-primary {
+  flex-shrink: 0;
+}
+
+/* Песочница */
+
+.sandbox-intro {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.sandbox-circuits {
+  margin-top: 20px;
+}
+
+.sandbox-circuits h2 {
+  margin: 0 0 14px;
+  font-size: 18px;
+}
+
+.sandbox-save {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.sandbox-name-field {
+  width: 240px;
+  padding: 9px 12px;
+}
+
+.sandbox-save .button-primary:disabled {
+  border-color: var(--border-strong);
+  background: var(--panel-raised);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.sandbox-save-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--monospace);
+  font-size: 12px;
+}
+
+.sandbox-circuits-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.sandbox-circuit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.sandbox-circuit {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(21, 29, 40, 0.6);
+}
+
+.sandbox-circuit-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sandbox-circuit-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* Экран Модуля */
 
 .module-header {

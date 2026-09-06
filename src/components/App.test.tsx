@@ -8,7 +8,6 @@ import {
   setResistance,
   wireRing,
 } from '../testing/navigation';
-
 // Курс, Теория и Прогресс — по настоящим данным приложения, домен не мокается.
 // «Перезагрузка страницы» моделируется размонтированием и новым рендером App:
 // Прогресс восстанавливается из localStorage.
@@ -314,5 +313,57 @@ describe('Стандарт обозначений между сессиями', 
     await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
     expect(screen.getByRole('combobox', { name: 'Обозначения' })).toHaveValue('ansi');
     expect(batterySymbol().querySelector('circle')).not.toBeNull();
+  });
+});
+
+describe('Песочница', () => {
+  it('открывается из главного меню, схемы переживают перезагрузку страницы', async () => {
+    // изолируем хранилище схем от других тестов файла
+    window.localStorage.removeItem('electronics-trainer.sandbox.v1');
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    // вход из главного меню — с самого начала Курса
+    expect(screen.getByRole('heading', { name: 'Песочница' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+
+    // Палитра по текущему Прогрессу (М1) — и без «Проверить»
+    expect(screen.getByRole('button', { name: 'Моторчик' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Проверить' })).not.toBeInTheDocument();
+
+    // контур из батареи и лампочки, сохранение под именем
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await wireRing(user, ['Батарея 1', 'Лампочка 2']);
+    await user.type(screen.getByRole('textbox', { name: 'Название схемы' }), 'Кольцо');
+    await user.click(screen.getByRole('button', { name: 'Сохранить схему' }));
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+
+    // «перезагрузка страницы»: новый App читает хранилище схем
+    firstRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Загрузить «Кольцо»' }));
+
+    // загрузка без потерь: схема на Холсте и сразу живёт
+    expect(screen.getByRole('button', { name: 'Батарея 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Лампочка 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Провод w1' })).toBeInTheDocument();
+    expect(document.querySelector('.symbol-lamp-glow')).not.toBeNull();
+  });
+
+  it('выход возвращает в главное меню, Прогресс Курса не тронут', async () => {
+    window.localStorage.removeItem('electronics-trainer.sandbox.v1');
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+    await user.click(screen.getByRole('button', { name: '← К Модулям' }));
+
+    expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
   });
 });

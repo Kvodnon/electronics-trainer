@@ -2,6 +2,7 @@
  * Курс и Прогресс домен-слоя. Чистый TypeScript: без DOM и без зависимости от React.
  * Термины — по CONTEXT.md: Курс, Модуль, Теория, Задание, Прогресс.
  */
+import type { ComponentKind } from './canvas';
 import type { CircuitTask, Task } from './task';
 
 /**
@@ -184,6 +185,40 @@ export function moduleTaskQueue(module: CourseModule, progress: CourseProgress):
     if (state === 'returned-for-retry') retry.push(task);
   }
   return [...fresh, ...retry];
+}
+
+/**
+ * Палитра Модуля: все Компоненты его Схема-заданий, в порядке объявления.
+ * Палитра объявляется в контенте Заданий — отдельного источника правды нет.
+ */
+export function modulePaletteOf(module: CourseModule): readonly ComponentKind[] {
+  const kinds: ComponentKind[] = [];
+  for (const task of module.tasks) {
+    if (task.kind !== 'circuit-task') continue;
+    for (const kind of task.palette) {
+      if (!kinds.includes(kind)) kinds.push(kind);
+    }
+  }
+  return kinds;
+}
+
+/**
+ * Палитра Песочницы: все Компоненты, открытые текущим Прогрессом, —
+ * объединение Палитр разблокированных Модулей (CONTEXT.md: Палитра
+ * «расширяется с прохождением Модулей»).
+ */
+export function sandboxPaletteOf(
+  course: CourseData,
+  progress: CourseProgress,
+): readonly ComponentKind[] {
+  const kinds: ComponentKind[] = [];
+  for (const module of course.modules) {
+    if (isModuleLocked(course, progress, module.id)) continue;
+    for (const kind of modulePaletteOf(module)) {
+      if (!kinds.includes(kind)) kinds.push(kind);
+    }
+  }
+  return kinds;
 }
 
 /*

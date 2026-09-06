@@ -17,6 +17,21 @@ export type ComponentKind =
   | 'pushbutton'
   | 'motor';
 
+/** Все виды Компонентов — для проверок данных извне домена (хранилище схем). */
+export const componentKinds: readonly ComponentKind[] = [
+  'battery',
+  'resistor',
+  'lamp',
+  'switch',
+  'pushbutton',
+  'motor',
+];
+
+/** Это вид Компонента Палитры? */
+export function isComponentKind(value: unknown): value is ComponentKind {
+  return typeof value === 'string' && (componentKinds as readonly string[]).includes(value);
+}
+
 /** Поворот Компонента шагами 90° по часовой стрелке. */
 export type Rotation = 0 | 90 | 180 | 270;
 
@@ -75,6 +90,7 @@ export type CanvasAction =
   | { readonly type: 'component-value-set'; readonly componentId: string; readonly patch: ComponentValuePatch }
   | { readonly type: 'wire-drawn'; readonly from: PinRef; readonly to: PinRef }
   | { readonly type: 'wire-removed'; readonly wireId: string }
+  | { readonly type: 'canvas-loaded'; readonly canvas: CanvasState }
   | { readonly type: 'canvas-reset' }
   | { readonly type: 'undo' }
   | { readonly type: 'redo' };
@@ -252,6 +268,10 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
         ...patch,
       }));
     }
+    case 'canvas-loaded':
+      // Загрузка сохранённой схемы — новый сеанс правки: прежний черновик
+      // из истории undo не возвращается.
+      return emptyHistoryOf(action.canvas);
     case 'canvas-reset':
       return withHistory(history, emptyCanvas);
     case 'undo': {
@@ -330,4 +350,9 @@ function withHistory(history: CanvasHistory, present: CanvasState): CanvasHistor
     present,
     future: [],
   };
+}
+
+/** История, начинающаяся с данного состояния: для загрузки снимка схемы. */
+function emptyHistoryOf(present: CanvasState): CanvasHistory {
+  return { past: [], present, future: [] };
 }

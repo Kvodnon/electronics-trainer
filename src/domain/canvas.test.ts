@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   canvasReducer,
   defaultValuesOf,
+  emptyCanvas,
   emptyHistory,
   suggestPlacementPosition,
   type CanvasHistory,
+  type CanvasState,
   type ComponentKind,
 } from './canvas';
 
@@ -342,5 +344,37 @@ describe('Холст: Провода', () => {
     expect(history.present.wires).toHaveLength(1);
     expect(history.present.wires[0].to).toEqual({ componentId: 'c3', pin: 0 });
     expect(canvasReducer(history, { type: 'wire-removed', wireId: 'missing-wire' })).toBe(history);
+  });
+});
+
+describe('Загрузка сохранённой схемы', () => {
+  it('canvas-loaded заменяет Холст снимком и начинает новую историю', () => {
+    const draft = historyWithPlaced(['battery', 'lamp']);
+    const saved: CanvasState = {
+      components: [
+        { id: 'c9', kind: 'motor', x: 340, y: 220, rotation: 90, resistance: 80 },
+      ],
+      wires: [],
+    };
+
+    const loaded = canvasReducer(draft, { type: 'canvas-loaded', canvas: saved });
+
+    expect(loaded.present).toEqual(saved);
+    // прежний черновик не возвращается: загрузка — новый сеанс правки
+    expect(canvasReducer(loaded, { type: 'undo' }).present).toEqual(saved);
+    expect(canvasReducer(loaded, { type: 'redo' })).toBe(loaded);
+  });
+
+  it('после загрузки редактор продолжает работу: постановка и undo ведут себя как обычно', () => {
+    const loaded = canvasReducer(emptyHistory, {
+      type: 'canvas-loaded',
+      canvas: emptyCanvas,
+    });
+
+    const placed = canvasReducer(loaded, { type: 'component-placed', kind: 'resistor', x: 100, y: 100 });
+    expect(placed.present.components).toHaveLength(1);
+    const undone = canvasReducer(placed, { type: 'undo' });
+    expect(undone.present.components).toHaveLength(0);
+    expect(canvasReducer(undone, { type: 'redo' }).present.components).toHaveLength(1);
   });
 });
