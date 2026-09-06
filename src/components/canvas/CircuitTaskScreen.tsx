@@ -4,11 +4,13 @@ import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canv
 import type { SymbolStandard } from '../../domain/symbols';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
+import { solveTransient, type TransientSolution } from '../../domain/transient';
 import { HintLadder } from '../HintLadder';
 import { readingsByComponent, wireCurrents } from '../../domain/simulator';
 import { useLiveCircuit, useMultimeter } from './liveCircuit';
 import { MultimeterControls, StandardControls } from './ToolbarControls';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
+import { OscilloscopePanel, useTransientPlayback } from './OscilloscopePanel';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
@@ -30,6 +32,9 @@ interface CircuitTaskScreenProps {
  * изменение (общие хуки с Песочницей); числовой оверлей и подсветка места
  * ошибки — только по вердикту. Стандарт обозначений приходит снаружи:
  * переключатель меняет только отрисовку, собранная схема остаётся как была.
+ * Задание с переходным режимом дополнительно показывает Осциллограф:
+ * кривая напряжения во времени перестраивается вместе со схемой, а
+ * «Проиграть заряд» наполняет конденсатор на Холсте под бегунок.
  */
 export function CircuitTaskScreen({
   task,
@@ -47,6 +52,17 @@ export function CircuitTaskScreen({
 
   const { solution: liveSolution, readings: liveReadings } = useLiveCircuit(history);
   const multimeter = useMultimeter(liveSolution);
+
+  /** Переходный режим живёт на каждое изменение схемы: осциллограф строится по нему. */
+  const transient = useMemo<TransientSolution | null>(() => {
+    if (task.transient === undefined) return null;
+    try {
+      return solveTransient(history.present, task.transient);
+    } catch {
+      return null;
+    }
+  }, [history.present, task.transient]);
+  const playback = useTransientPlayback(transient);
 
   /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
   const overlay = useMemo<CanvasOverlay | null>(() => {
@@ -82,6 +98,7 @@ export function CircuitTaskScreen({
         onAction={onAction}
         symbolStandard={symbolStandard}
         liveReadings={liveReadings}
+        capacitorFill={playback.fillLevels}
         overlay={overlay}
         faultSpot={faultSpot}
         multimeter={multimeter.gestures}
@@ -110,6 +127,9 @@ export function CircuitTaskScreen({
           </>
         }
       />
+      {transient !== null && task.transient !== undefined && (
+        <OscilloscopePanel plan={task.transient} transient={transient} playback={playback} />
+      )}
       {shownEvaluation !== null && (
         <CircuitVerdict evaluation={shownEvaluation} onNext={onNext} />
       )}

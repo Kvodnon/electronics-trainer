@@ -14,10 +14,23 @@
  * Нелинейные модели М2: диод и светодиод — кусочно-линейные с прямым порогом.
  * Проводящее состояние — ЭДС порога с малым последовательным сопротивлением
  * (эквивалент Нортона, как у батареи); запертое — обрыв. Состояние каждого
- * диода угадывается итеративно: схема решается, состояния поправляются, пока
+ * диода угадывается итеративно: схема решается, состояния поправруются, пока
  * не перестанут меняться.
+ *
+ * Конденсатор (тикет 14): для постоянного тока — разрыв, поэтому в обычном
+ * решении его ветвь разомкнута, а всё установившееся напряжение остаётся
+ * на нём. Переходный режим (`solveTransient`) решает схему шагами во времени,
+ * подменяя конденсатор компаньоном интегрирования через DcSolveOptions.
  */
-import { defaultLedColor, pinKey, type CanvasState, type ComponentKind, type LedColor, type PlacedComponent } from './canvas';
+import {
+  defaultCapacitance,
+  defaultLedColor,
+  pinKey,
+  type CanvasState,
+  type ComponentKind,
+  type LedColor,
+  type PlacedComponent,
+} from './canvas';
 
 /** Внутреннее сопротивление батареи, Ом (поведенческая модель М1). */
 export const BATTERY_INTERNAL_RESISTANCE = 0.1;
@@ -45,6 +58,43 @@ export const LED_LIT_CURRENT = 0.001;
 export const LED_FULL_CURRENT = 0.02;
 /** Защита от колебаний перебора состояний диодов в одном острове. */
 const MAX_DIODE_ITERATIONS = 50;
+
+/**
+ * Состояние конденсатора-компаньона: напряжение (В) и ток (А, знак — от
+ * вывода 0 к выводу 1) на предыдущем шаге интегрирования.
+ */
+export interface CapacitorState {
+  readonly voltage: number;
+  readonly current: number;
+}
+
+/**
+ * Переопределения моделей для переходного режима. Обычное решение solveDc
+ * (без опций) не меняется: конденсатор — разрыв, коммутаторы — как нарисованы.
+ */
+export interface DcSolveOptions {
+  /** Состояние коммутаторов: id → замкнут? Нет записи — нарисованное состояние. */
+  readonly contactStates?: ReadonlyMap<string, boolean>;
+  /**
+   * Состояние конденсаторов: id → напряжение и ток шага. Задано — конденсатор
+   * решается компаньоном трапецеидального интегрирования (как батарея с ЭДС
+   * v + i·Δt/2C и сопротивлением Δt/2C).
+   */
+  readonly capacitorStates?: ReadonlyMap<string, CapacitorState>;
+  /** Шаг интегрирования, с — вместе с ёмкостью задаёт компаньона. */
+  readonly timeStep?: number;
+  /**
+   * Проба Thevenin: конденсатор с этим id заменяется источником тока 1 А,
+   * источники ЭДС гасятся — напряжение на пробе численно равно сопротивлению
+   * цепи между его выводами (Ом на ампер).
+   */
+  readonly theveninProbeOf?: string;
+}
+
+/** Ток пробы Thevenin, А. */
+const THEVENIN_PROBE_CURRENT = 1;
+/** Напряжение на конденсаторе-компаньоне, ниже которого остров не «живой». */
+const ENERGIZED_VOLTAGE = 1e-9;
 
 /**
  * Показание Симулятора для одного Компонента. Знаки: напряжение — вывод 0
@@ -169,8 +219,11 @@ export function ledBrightness(reading: ComponentReading): number {
 /** Ниже этой величины ток и мощность — числовая пыль разомкнутых контактов. */
 const NUMERICAL_DUST = 1e-7;
 
-/** Сопротивление ветви по виду и номиналу Компонента. */
-function branchResistance(component: PlacedComponent): number {
+/** Сопротивление ветви по виду и номиналу Компонента (с переопределением контактов). */
+function branchResistance(
+  component: PlacedComponent,
+  contactStates?: ReadonlyMap<string, boolean>,
+): number {
   switch (component.kind) {
     case 'battery':
       return BATTERY_INTERNAL_RESISTANCE;
@@ -179,12 +232,17 @@ function branchResistance(component: PlacedComponent): number {
     case 'motor':
       return component.resistance ?? Number.POSITIVE_INFINITY;
     case 'switch':
-    case 'pushbutton':
-      return component.closed ? CLOSED_CONTACT_RESISTANCE : OPEN_CONTACT_RESISTANCE;
+    case 'pushbutton': {
+      const closed = contactStates?.get(component.id) ?? (component.closed ?? false);
+      return closed ? CLOSED_CONTACT_RESISTANCE : OPEN_CONTACT_RESISTANCE;
+    }
     case 'diode':
     case 'led':
       // запертое состояние диода — обрыв; проводящее штемпелюется отдельно
       return OPEN_CONTACT_RESISTANCE;
+    case 'capacitor':
+      // для постоянного тока конденсатор — разрыв; переходный режим штемпелюет компаньона
+      return Number.POSITIVE_INFINITY;
   }
 }
 
@@ -235,11 +293,13 @@ class DisjointSet {
 }
 
 /**
- * Решает схему постоянного тока. Остров без батареи не возбуждается: все его
- * токи нулевые. Остров с батареей решается методом узловых потенциалов;
- * «землёй» берётся узел минусового вывода первой батареи острова.
+ * Решает схему постоянного тока. Остров без «живого» источника не возбуждается:
+ * все его токи нулевые. Остров с батареей (или заряженным конденсатором-компаньоном,
+ * или пробой Thevenin) решается методом узловых потенциалов; «землёй» берётся
+ * узел минусового вывода первой батареи острова, а без неё — минус первой
+ * активной ветви.
  */
-export function solveDc(canvas: CanvasState): DcSolution {
+export function solveDc(canvas: CanvasState, options: DcSolveOptions = {}): DcSolution {
   // Провода объединяют выводы в узлы; корень объединения — имя узла
   const knownIds = new Set(canvas.components.map((component) => component.id));
   const pinSets = new DisjointSet();
@@ -274,24 +334,34 @@ export function solveDc(canvas: CanvasState): DcSolution {
   }
 
   const nodeVoltage = new Array<number>(nodeIndex.size).fill(0);
-  const islandsWithBattery = new Set<string>();
+  // «Живой» источник острова: батарея, проба Thevenin или заряженный компаньон
+  const energizesIsland = (branch: Branch): boolean =>
+    branch.component.kind === 'battery' ||
+    (branch.component.kind === 'capacitor' &&
+      (options.theveninProbeOf === branch.component.id ||
+        Math.abs(options.capacitorStates?.get(branch.component.id)?.voltage ?? 0) >= ENERGIZED_VOLTAGE));
+  const sourceIslands = new Set<string>();
   for (const branch of branches) {
-    if (branch.component.kind === 'battery') islandsWithBattery.add(findIsland(branch.nodeA));
+    if (energizesIsland(branch)) sourceIslands.add(findIsland(branch.nodeA));
   }
 
   // Проводящие диоды: состояния угадываются итеративно в каждом острове.
   const conductingDiodes = new Set<string>();
-  for (const islandRoot of islandsWithBattery) {
-    const ground = branches.find(
-      (branch) =>
-        branch.component.kind === 'battery' && findIsland(branch.nodeA) === islandRoot,
-    )!.nodeB;
-    for (const id of solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage)) {
+  for (const islandRoot of sourceIslands) {
+    const ground = (
+      branches.find(
+        (branch) => branch.component.kind === 'battery' && findIsland(branch.nodeA) === islandRoot,
+      ) ??
+      branches.find((branch) => energizesIsland(branch) && findIsland(branch.nodeA) === islandRoot)!
+    ).nodeB;
+    for (const id of solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage, options)) {
       conductingDiodes.add(id);
     }
   }
 
-  const readings = branches.map((branch) => readingOfBranch(branch, nodeVoltage, conductingDiodes));
+  const readings = branches.map((branch) =>
+    readingOfBranch(branch, nodeVoltage, conductingDiodes, options),
+  );
   const pinNodes = new Map<string, PinNode>();
   for (const branch of branches) {
     pinNodes.set(pinKey(branch.component.id, 0), {
@@ -312,6 +382,7 @@ export function solveDc(canvas: CanvasState): DcSolution {
  * запертыми; после каждого решения состояние диода правится (открылся при
  * напряжении выше порога, закрылся при исчезновении прямого тока), пока
  * состояния не перестанут меняться. Возвращает множество проводящих диодов.
+ * Проба Thevenin лине́йна: диоды остаются запертыми, итерации не нужны.
  */
 function solveIsland(
   branches: readonly Branch[],
@@ -319,21 +390,45 @@ function solveIsland(
   ground: number,
   findIsland: (node: number) => string,
   nodeVoltage: number[],
+  options: DcSolveOptions,
 ): Set<string> {
   const inIsland = (branch: Branch): boolean =>
     findIsland(branch.nodeA) === islandRoot || findIsland(branch.nodeB) === islandRoot;
+
+  /**
+   * В локальный индекс попадают только узлы с проводимостью: открытая ветвь
+   * (конденсатор вне переходного режима) не штемпелюет проводимость, и узел,
+   * которого касаются только открытые ветви, дал бы нулевую строку матрицы.
+   */
+  const stampsConductance = (branch: Branch): boolean => {
+    if (branch.component.kind === 'capacitor') {
+      if (options.theveninProbeOf === branch.component.id) return false;
+      return options.capacitorStates?.has(branch.component.id) ?? false;
+    }
+    return Number.isFinite(branchResistance(branch.component, options.contactStates));
+  };
+  const nodeHasConductance = new Set<number>();
+  for (const branch of branches) {
+    if (!inIsland(branch) || branch.nodeA === branch.nodeB || !stampsConductance(branch)) continue;
+    nodeHasConductance.add(branch.nodeA);
+    nodeHasConductance.add(branch.nodeB);
+  }
 
   const localIndex = new Map<number, number>();
   for (const branch of branches) {
     if (!inIsland(branch)) continue;
     for (const node of [branch.nodeA, branch.nodeB]) {
-      if (node !== ground && !localIndex.has(node)) localIndex.set(node, localIndex.size);
+      if (node !== ground && !localIndex.has(node) && nodeHasConductance.has(node)) {
+        localIndex.set(node, localIndex.size);
+      }
     }
   }
 
   const conducting = new Set<string>();
   for (let iteration = 0; ; iteration += 1) {
-    solveWithDiodeStates(branches, inIsland, localIndex, conducting, nodeVoltage);
+    solveWithDiodeStates(branches, inIsland, localIndex, conducting, nodeVoltage, options);
+
+    if (options.theveninProbeOf !== undefined) break; // проба — линейная задача
 
     let changed = false;
     for (const branch of branches) {
@@ -361,7 +456,9 @@ function solveWithDiodeStates(
   localIndex: Map<number, number>,
   conducting: Set<string>,
   nodeVoltage: number[],
+  options: DcSolveOptions,
 ): void {
+  const probe = options.theveninProbeOf !== undefined;
   const size = localIndex.size;
   const conductance: number[][] = Array.from({ length: size }, () => new Array<number>(size).fill(0));
   const injection = new Array<number>(size).fill(0);
@@ -378,27 +475,47 @@ function solveWithDiodeStates(
     }
   };
 
+  const stampNorton = (branch: Branch, resistance: number, emf: number): void => {
+    stampConductance(branch.nodeA, branch.nodeB, 1 / resistance);
+    const la = localIndex.get(branch.nodeA);
+    const lb = localIndex.get(branch.nodeB);
+    if (la !== undefined) injection[la] += emf / resistance;
+    if (lb !== undefined) injection[lb] -= emf / resistance;
+  };
+
   for (const branch of branches) {
     if (!inIsland(branch)) continue;
     if (branch.component.kind === 'battery') {
-      const g = 1 / BATTERY_INTERNAL_RESISTANCE;
-      const current = (branch.component.voltage ?? 0) / BATTERY_INTERNAL_RESISTANCE;
-      stampConductance(branch.nodeA, branch.nodeB, g);
-      const la = localIndex.get(branch.nodeA);
-      const lb = localIndex.get(branch.nodeB);
-      if (la !== undefined) injection[la] += current;
-      if (lb !== undefined) injection[lb] -= current;
+      // проба Thevenin гасит источники ЭДС: остаётся только внутреннее сопротивление
+      const emf = probe ? 0 : (branch.component.voltage ?? 0);
+      stampNorton(branch, BATTERY_INTERNAL_RESISTANCE, emf);
+    } else if (branch.component.kind === 'capacitor') {
+      if (options.theveninProbeOf === branch.component.id) {
+        // проба: источник тока 1 А между выводами конденсатора
+        const la = localIndex.get(branch.nodeA);
+        const lb = localIndex.get(branch.nodeB);
+        if (la !== undefined) injection[la] += THEVENIN_PROBE_CURRENT;
+        if (lb !== undefined) injection[lb] -= THEVENIN_PROBE_CURRENT;
+      } else {
+        const state = options.capacitorStates?.get(branch.component.id);
+        if (state !== undefined) {
+          // компаньон трапецеидального интегрирования: конденсатор ведёт себя
+          // как батарея с ЭДС v + i·Δt/2C и сопротивлением Δt/2C. При пробном
+          // «нулевом» шаге это почти короткое замыкание: соседние конденсаторы
+          // в пробе постоянной времени ведут себя как короткие — напряжение на
+          // них не может измениться мгновенно.
+          const capacitance = branch.component.capacitance ?? defaultCapacitance;
+          const resistance = (options.timeStep ?? 0) / (2 * capacitance);
+          if (Number.isFinite(resistance) && resistance > 0) {
+            stampNorton(branch, resistance, state.voltage + state.current * resistance);
+          }
+        }
+      }
     } else if (isDiodeKind(branch.component.kind) && conducting.has(branch.component.id)) {
       // проводящий диод — ЭДС порога с малым последовательным сопротивлением
-      const g = 1 / DIODE_ON_RESISTANCE;
-      const current = forwardVoltageOf(branch.component) / DIODE_ON_RESISTANCE;
-      stampConductance(branch.nodeA, branch.nodeB, g);
-      const la = localIndex.get(branch.nodeA);
-      const lb = localIndex.get(branch.nodeB);
-      if (la !== undefined) injection[la] += current;
-      if (lb !== undefined) injection[lb] -= current;
+      stampNorton(branch, DIODE_ON_RESISTANCE, forwardVoltageOf(branch.component));
     } else {
-      const resistance = branchResistance(branch.component);
+      const resistance = branchResistance(branch.component, options.contactStates);
       if (Number.isFinite(resistance) && resistance > 0) {
         stampConductance(branch.nodeA, branch.nodeB, 1 / resistance);
       }
@@ -437,11 +554,12 @@ function solveLinearSystem(a: number[][], b: number[]): number[] {
   return x;
 }
 
-/** Показание ветви по узловым потенциалам и состояниям диодов. */
+/** Показание ветви по узловым потенциалам, состояниям диодов и опциям решателя. */
 function readingOfBranch(
   branch: Branch,
   nodeVoltage: readonly number[],
   conductingDiodes: ReadonlySet<string>,
+  options: DcSolveOptions = {},
 ): ComponentReading {
   const { component } = branch;
   const voltage = nodeVoltage[branch.nodeA] - nodeVoltage[branch.nodeB];
@@ -454,6 +572,24 @@ function readingOfBranch(
       current: snapToZero(current),
       voltage,
       power: snapToZero(voltage * current),
+    };
+  }
+  if (component.kind === 'capacitor') {
+    // компаньон переходного режима: ток восстанавливается по его уравнению,
+    // i = (v − v_пред)/r − i_пред; обычное решение — обрыв, ток нулевой
+    const state = options.capacitorStates?.get(component.id);
+    const capacitance = component.capacitance ?? defaultCapacitance;
+    const resistance = (options.timeStep ?? 0) / (2 * capacitance);
+    const current =
+      state !== undefined && resistance > 0
+        ? (voltage - state.voltage) / resistance - state.current
+        : 0;
+    return {
+      componentId: component.id,
+      kind: component.kind,
+      current: snapToZero(current),
+      voltage,
+      power: snapToZero(Math.abs(voltage * current)),
     };
   }
   if (isDiodeKind(component.kind)) {

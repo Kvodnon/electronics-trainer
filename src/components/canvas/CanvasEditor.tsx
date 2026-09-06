@@ -89,6 +89,8 @@ interface CanvasEditorProps {
   readonly actions?: ReactNode;
   /** Живые показания Симулятора: лампочка светится, моторчик вращается. */
   readonly liveReadings?: ReadonlyMap<string, ComponentReading>;
+  /** Уровень заряда конденсаторов (0..1) во время проигрывания осциллографа. */
+  readonly capacitorFill?: ReadonlyMap<string, number>;
   /** Числовой оверлей токов и напряжений; нет — слой не рисуется. */
   readonly overlay?: CanvasOverlay | null;
   /** Подсветка места ошибки из Диагноза. */
@@ -97,7 +99,7 @@ interface CanvasEditorProps {
   readonly multimeter?: MultimeterGestures | null;
 }
 
-export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, overlay, faultSpot, multimeter = null }: CanvasEditorProps) {
+export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, capacitorFill, overlay, faultSpot, multimeter = null }: CanvasEditorProps) {
   const canvas = history.present;
   const [selection, setSelection] = useState<Selection>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -427,7 +429,12 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
             >
               <circle className="canvas-component-hit" r={COMPONENT_HIT_RADIUS} />
               <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <CanvasSymbolBody component={component} reading={liveReadings?.get(component.id)} standard={symbolStandard} />
+                <CanvasSymbolBody
+                  component={component}
+                  reading={liveReadings?.get(component.id)}
+                  chargeLevel={capacitorFill?.get(component.id)}
+                  standard={symbolStandard}
+                />
               </g>
               {fault && <circle className="fault-ring" r={46} aria-hidden="true" />}
             </g>

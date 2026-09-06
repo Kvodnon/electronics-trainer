@@ -29,6 +29,29 @@ describe('parseQuantity: суффиксы и базовая единица', () 
     expect(parseQuantity('100Ом', 'Ом')).toEqual({ status: 'ok', value: 100 });
   });
 
+  it('ёмкость: пФ, нФ, мкФ, мФ и фарады (М2: конденсатор)', () => {
+    // умножение на множитель-суффикс даёт погрешность двойки — сравниваем с допуском
+    const valueOf = (raw: string): number => {
+      const result = parseQuantity(raw, 'Ф');
+      expect(result.status).toBe('ok');
+      return result.status === 'ok' ? result.value : Number.NaN;
+    };
+    expect(valueOf('100мкФ')).toBeCloseTo(1e-4, 15);
+    expect(valueOf('100 мкФ')).toBeCloseTo(1e-4, 15);
+    expect(valueOf('10нФ')).toBeCloseTo(1e-8, 15);
+    expect(valueOf('22пФ')).toBeCloseTo(2.2e-11, 15);
+    expect(valueOf('0,47мФ')).toBeCloseTo(4.7e-4, 15);
+    expect(valueOf('2')).toBe(2);
+  });
+
+  it('время: мс, мкс и секунды (М2: постоянная времени)', () => {
+    expect(parseQuantity('500мс', 'с')).toEqual({ status: 'ok', value: 0.5 });
+    expect(parseQuantity('1,5', 'с')).toEqual({ status: 'ok', value: 1.5 });
+    const micro = parseQuantity('25мкс', 'с');
+    expect(micro.status).toBe('ok');
+    if (micro.status === 'ok') expect(micro.value).toBeCloseTo(2.5e-5, 15);
+  });
+
   it('знак числа сохраняется', () => {
     expect(parseQuantity('-5мВ', 'В')).toEqual({ status: 'ok', value: -0.005 });
     expect(parseQuantity('+2', 'А')).toEqual({ status: 'ok', value: 2 });
@@ -97,6 +120,14 @@ describe('formatQuantity: значение в базовой единице → 
   it('ноль и отрицательные значения', () => {
     expect(formatQuantity(0, 'В')).toBe('0 В');
     expect(formatQuantity(-0.005, 'В')).toBe('-5 мВ');
+  });
+
+  it('ёмкость и время — с удобной приставкой (М2)', () => {
+    expect(formatQuantity(1e-4, 'Ф')).toBe('100 мкФ');
+    expect(formatQuantity(2.2e-11, 'Ф')).toBe('22 пФ');
+    expect(formatQuantity(1.9, 'с')).toBe('1,9 с');
+    expect(formatQuantity(0.5, 'с')).toBe('500 мс');
+    expect(formatQuantityRange(1.7, 2.1, 'с')).toBe('1,7–2,1 с');
   });
 });
 

@@ -411,3 +411,27 @@ describe('Холст М2: диод и светодиод', () => {
     expect(diodeResistance).toBe(history);
   });
 });
+
+describe('Холст М2: конденсатор (тикет 14)', () => {
+  it('Конденсатор ставится с ёмкостью по умолчанию 100 мкФ', () => {
+    const history = historyWithPlaced(['capacitor']);
+    expect(defaultValuesOf('capacitor')).toEqual({ capacitance: 0.0001 });
+    expect(history.present.components[0].capacitance).toBe(0.0001);
+  });
+
+  it('Ёмкость правится; чужие поля и нечисловые значения не прилипают', () => {
+    let history = historyWithPlaced(['capacitor', 'battery']);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { capacitance: 4.7e-7 } });
+    expect(history.present.components[0].capacitance).toBe(4.7e-7);
+
+    const negative = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { capacitance: -1e-6 } });
+    const nan = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { capacitance: Number.NaN } });
+    // напряжение — не поле конденсатора
+    const wrongKind = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 5 } });
+    const unknown = canvasReducer(history, { type: 'component-value-set', componentId: 'missing', patch: { capacitance: 1e-6 } });
+    expect(negative).toBe(history);
+    expect(nan).toBe(history);
+    expect(wrongKind).toBe(history);
+    expect(unknown).toBe(history);
+  });
+});

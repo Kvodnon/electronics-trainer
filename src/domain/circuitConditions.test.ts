@@ -3,6 +3,7 @@ import type { CanvasState, ComponentKind, PlacedComponent, PinRef, Wire } from '
 import { defaultValuesOf } from './canvas';
 import { checkConditions } from './circuitConditions';
 import { solveDc } from './simulator';
+import { solveTransient } from './transient';
 import type { CircuitCondition } from './task';
 
 // Проверка условий-измерений по решению Симулятора. Строки Разбора обязаны
@@ -223,5 +224,112 @@ describe('checkConditions: активное состояние', () => {
     const dark = check(reversed, { kind: 'component-active', componentKind: 'led', active: true });
     expect(dark.passed).toBe(false);
     expect(dark.text).toContain('не светится');
+  });
+});
+
+describe('checkConditions: измерения во времени (тикет 14)', () => {
+  /** Батарея — резистор 10 кОм — конденсатор 100 мкФ: заряд с τ ≈ 1 с. */
+  function chargingCanvas(): CanvasState {
+    return canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 10_000 }), component('c', 'capacitor')],
+      [wire('w1', pin('b', 1), pin('r', 0)), wire('w2', pin('r', 1), pin('c', 0)), wire('w3', pin('c', 1), pin('b', 0))],
+    );
+  }
+
+  /** Проверка условия по решению переходного режима зарядной схемы. */
+  function checkTransient(canvas: CanvasState, condition: CircuitCondition) {
+    const [result] = checkConditions(canvas, solveDc(canvas), [condition], solveTransient(canvas, { duration: 5 }));
+    if (result === undefined) throw new Error('условие не вернуло результат');
+    return result;
+  }
+
+  it('постоянная времени в границах: строка называет τ и границы в секундах', () => {
+    const result = checkTransient(chargingCanvas(), {
+      kind: 'rc-time-constant',
+      componentKind: 'capacitor',
+      range: { from: 0.9, to: 1.1 },
+    });
+    expect(result.passed).toBe(true);
+    expect(result.text).toContain('Постоянная времени');
+    expect(result.text).toContain('1 с');
+    expect(result.text).toContain('0,9–1,1 с');
+    expect(result.componentId).toBe('c');
+  });
+
+  it('постоянная времени вне границ — не выполнено с фактическим значением', () => {
+    const result = checkTransient(chargingCanvas(), {
+      kind: 'rc-time-constant',
+      componentKind: 'capacitor',
+      range: { from: 2, to: 3 },
+    });
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('вне границ');
+  });
+
+  it('напряжение в момент t читается из кривой и сверяется с границами', () => {
+    // к t = 3,5 с заряд ≈ 97%: 8,7 В
+    const ok = checkTransient(chargingCanvas(), {
+      kind: 'capacitor-voltage-at',
+      componentKind: 'capacitor',
+      time: 3.5,
+      range: { from: 8.5, to: 8.9 },
+    });
+    expect(ok.passed).toBe(true);
+    expect(ok.text).toContain('t = 3,5 с');
+    expect(ok.text).toContain('8,5–8,9 В');
+
+    // в момент t = 1 с заряд всего ~63% — в границы [8,5; 8,9] не попадает
+    const early = checkTransient(chargingCanvas(), {
+      kind: 'capacitor-voltage-at',
+      componentKind: 'capacitor',
+      time: 1,
+      range: { from: 8.5, to: 8.9 },
+    });
+    expect(early.passed).toBe(false);
+    expect(early.text).toContain('вне границ');
+  });
+
+  it('без переходного режима в Задании условия во времени честно проваливаются', () => {
+    const tau = check(chargingCanvas(), {
+      kind: 'rc-time-constant',
+      componentKind: 'capacitor',
+      range: { from: 0.9, to: 1.1 },
+    });
+    expect(tau.passed).toBe(false);
+    expect(tau.text).toContain('нет переходного режима');
+
+    const voltage = check(chargingCanvas(), {
+      kind: 'capacitor-voltage-at',
+      componentKind: 'capacitor',
+      time: 1,
+      range: { from: 1, to: 2 },
+    });
+    expect(voltage.passed).toBe(false);
+    expect(voltage.text).toContain('нет переходного режима');
+  });
+
+  it('без конденсаторов измерять не на что', () => {
+    const lampCanvas = litLampCanvas();
+    const result = checkTransient(lampCanvas, {
+      kind: 'rc-time-constant',
+      componentKind: 'capacitor',
+      range: { from: 0.9, to: 1.1 },
+    });
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет конденсаторов');
+  });
+
+  it('у разомкнутой цепи постоянной времени нет — условие не выполняется с объяснением', () => {
+    const openCanvas = canvasOf(
+      [component('b', 'battery'), component('sw', 'switch', { closed: false }), component('c', 'capacitor')],
+      [wire('w1', pin('b', 1), pin('sw', 0)), wire('w2', pin('sw', 1), pin('c', 0)), wire('w3', pin('c', 1), pin('b', 0))],
+    );
+    const result = checkTransient(openCanvas, {
+      kind: 'rc-time-constant',
+      componentKind: 'capacitor',
+      range: { from: 0.9, to: 1.1 },
+    });
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет резистивного пути');
   });
 });

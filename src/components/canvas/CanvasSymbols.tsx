@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ComponentKind, LedColor, PlacedComponent } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
-import { defaultLedColor, defaultValuesOf, valueFieldOf } from '../../domain/canvas';
+import { defaultCapacitance, defaultLedColor, defaultValuesOf, valueFieldOf } from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
 import {
   DIODE_FORWARD_VOLTAGE,
@@ -31,6 +31,7 @@ export const componentTitles: Record<ComponentKind, string> = {
   motor: 'Моторчик',
   diode: 'Диод',
   led: 'Светодиод',
+  capacitor: 'Конденсатор',
 };
 
 /** Названия цветов свечения светодиода (копия UI; идентификаторы — данные домена). */
@@ -68,6 +69,8 @@ export function componentValueLabel(component: PlacedComponent): string {
       const color = component.color ?? defaultLedColor;
       return `${ledColorTitles[color]} · ${formatQuantity(LED_FORWARD_VOLTAGE[color], 'В')}`;
     }
+    case 'capacitance':
+      return formatQuantity(component.capacitance ?? defaultCapacitance, 'Ф');
     case 'none':
       return `порог ${formatQuantity(DIODE_FORWARD_VOLTAGE, 'В')}`;
   }
@@ -77,21 +80,25 @@ export function componentValueLabel(component: PlacedComponent): string {
  * Тело символа Компонента в локальных координатах. `reading` — живое показание
  * Симулятора: лампочка светится с яркостью от мощности, моторчик вращается,
  * когда ток выше порога (в Палитре показание нет — символы статичны).
+ * `chargeLevel` — заполненность конденсатора от 0 до 1: живёт только во время
+ * проигрывания переходного режима на осциллографе.
  */
 export function CanvasSymbolBody({
   component,
   reading,
+  chargeLevel,
   standard,
 }: {
   component: PlacedComponent;
   reading?: ComponentReading;
+  chargeLevel?: number;
   standard: SymbolStandard;
 }): ReactNode {
   switch (standard) {
     case 'gost':
-      return <GostBody component={component} reading={reading} />;
+      return <GostBody component={component} reading={reading} chargeLevel={chargeLevel} />;
     case 'ansi':
-      return <AnsiBody component={component} reading={reading} />;
+      return <AnsiBody component={component} reading={reading} chargeLevel={chargeLevel} />;
   }
 }
 
@@ -123,7 +130,7 @@ function MotorRotor({ reading, sign }: { reading?: ComponentReading; sign: strin
 }
 
 /** Тело символа по ГОСТ 2.7xx. */
-function GostBody({ component, reading }: { component: PlacedComponent; reading?: ComponentReading }): ReactNode {
+function GostBody({ component, reading, chargeLevel }: { component: PlacedComponent; reading?: ComponentReading; chargeLevel?: number }): ReactNode {
   switch (component.kind) {
     case 'battery':
       return (
@@ -195,6 +202,15 @@ function GostBody({ component, reading }: { component: PlacedComponent; reading?
           <path d="M14 -12 L24 -22 M18 -22 L24 -22 L24 -16" />
         </>
       );
+    case 'capacitor':
+      return (
+        <>
+          {/* обе пластины прямые: ГОСТ 2.728; заполнение между ними — уровень заряда */}
+          <CapacitorCharge level={chargeLevel ?? 0} />
+          <Leads from={6} />
+          <path d="M-6 -15 V15 M6 -15 V15" />
+        </>
+      );
   }
 }
 
@@ -210,7 +226,7 @@ function GostContacts({ closed }: { closed: boolean }) {
 }
 
 /** Тело символа по ANSI/IEEE (тикет 07): круг-источник, зигзаг, дуга ключа. */
-function AnsiBody({ component, reading }: { component: PlacedComponent; reading?: ComponentReading }): ReactNode {
+function AnsiBody({ component, reading, chargeLevel }: { component: PlacedComponent; reading?: ComponentReading; chargeLevel?: number }): ReactNode {
   switch (component.kind) {
     case 'battery':
       return (
@@ -275,6 +291,16 @@ function AnsiBody({ component, reading }: { component: PlacedComponent; reading?
           <path d="M14 -12 L24 -22 M18 -22 L24 -22 L24 -16" />
         </>
       );
+    case 'capacitor':
+      return (
+        <>
+          <CapacitorCharge level={chargeLevel ?? 0} />
+          <Leads from={6} />
+          {/* левая пластина прямая, правая изогнута дугой — ANSI/IEEE */}
+          <path d="M-6 -15 V15" />
+          <path d="M6 -15 Q14 0 6 15" />
+        </>
+      );
   }
 }
 
@@ -332,6 +358,27 @@ function LedGlow({ component, reading }: { component: PlacedComponent; reading?:
       r={22}
       fill={LED_GLOW_FILL[component.color ?? defaultLedColor]}
       opacity={brightness}
+      aria-hidden="true"
+    />
+  );
+}
+
+/**
+ * Заполнение между пластинами конденсатора снизу вверх: уровень 0..1 от
+ * проигрывания осциллографа — ученик видит, как конденсатор «наполняется».
+ */
+function CapacitorCharge({ level }: { level: number }): ReactNode {
+  if (level <= 0) return null;
+  const clamped = Math.min(1, level);
+  const height = 30 * clamped;
+  return (
+    <rect
+      className="symbol-capacitor-charge"
+      x={-6}
+      y={15 - height}
+      width={12}
+      height={height}
+      stroke="none"
       aria-hidden="true"
     />
   );

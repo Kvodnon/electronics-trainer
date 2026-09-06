@@ -343,3 +343,46 @@ describe('диагноз М2: напряжение ниже прямого по�
     expect(verdict.diagnoses[0].kind).not.toBe('diode-below-threshold');
   });
 });
+
+describe('диагноз М2: заряженный конденсатор — не обрыв (тикет 14)', () => {
+  /** Задание с условием на ток, которого у зарядной цепи не будет никогда. */
+  function evaluateRc(canvas: CanvasState) {
+    const task: CircuitTask = {
+      kind: 'circuit-task',
+      id: 'rc-task',
+      prompt: 'тест',
+      palette: ['battery', 'resistor', 'capacitor'],
+      conditions: [{ kind: 'current-through', componentKind: 'resistor', range: { from: 0.001, to: 0.002 } }],
+    };
+    const verdict = evaluate(task, answer(canvas.components, canvas.wires));
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    return verdict;
+  }
+
+  it('исправная зарядная RC-цепь с проваленным условием — «не по условию», а не «обрыв»', () => {
+    // в установившемся режиме конденсатор заряжен до 9 В и ток прекратился сам
+    const verdict = evaluateRc({
+      components: [component('b', 'battery'), component('r', 'resistor'), component('c', 'capacitor')],
+      wires: [
+        wire('w1', pin('b', 1), pin('r', 0)),
+        wire('w2', pin('r', 1), pin('c', 0)),
+        wire('w3', pin('c', 1), pin('b', 0)),
+      ],
+    });
+    expect(verdict.diagnoses).toHaveLength(1);
+    expect(verdict.diagnoses[0].kind).toBe('works-not-per-task');
+  });
+
+  it('висящий в воздухе вывод конденсатора — по-прежнему честный «обрыв» с местом ошибки', () => {
+    // контур не замкнут: второй вывод конденсатора ни к чему не подключён
+    const verdict = evaluateRc({
+      components: [component('b', 'battery'), component('r', 'resistor'), component('c', 'capacitor')],
+      wires: [
+        wire('w1', pin('b', 1), pin('r', 0)),
+        wire('w2', pin('r', 1), pin('c', 0)),
+      ],
+    });
+    expect(verdict.diagnoses[0].kind).toBe('open-circuit');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'c' });
+  });
+});

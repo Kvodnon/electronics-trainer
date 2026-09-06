@@ -1398,6 +1398,91 @@ body {
   }
 }
 
+/* Живое поведение: наполнение конденсатора от проигрывания осциллографа */
+
+.symbol-capacitor-charge {
+  fill: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* Осциллограф переходного режима */
+
+.scope-panel {
+  margin-top: 20px;
+}
+
+.scope-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.scope-controls .question-kind {
+  margin: 0;
+}
+
+.scope-readout {
+  margin: 0;
+  font-family: var(--monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.scope-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.scope-grid-line {
+  stroke: #223047;
+  stroke-width: 1;
+}
+
+.scope-tick {
+  fill: var(--text-muted);
+  font-family: var(--monospace);
+  font-size: 10px;
+}
+
+.scope-curve {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.scope-mark-line {
+  stroke: #e8b45e;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.scope-mark-line-dotted {
+  stroke: var(--text-muted);
+  stroke-dasharray: 2 5;
+}
+
+.scope-mark-label {
+  fill: #e8b45e;
+  font-family: var(--monospace);
+  font-size: 11px;
+}
+
+.scope-tau-mark .scope-mark-label {
+  fill: var(--text-muted);
+}
+
+.scope-playhead {
+  fill: var(--accent);
+  stroke: #0d141c;
+  stroke-width: 2;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .motor-rotor-spinning,
   .fault-ring {

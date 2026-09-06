@@ -14,6 +14,7 @@ import type {
 } from '../domain/task';
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
+import { evaluate } from '../domain/evaluate';
 import { emptyProgress, progressReducer, sandboxPaletteOf } from '../domain/course';
 
 /**
@@ -32,7 +33,12 @@ const MEASUREMENT_KINDS = new Set([
   'voltage-across',
   'power-of',
   'component-active',
+  'rc-time-constant',
+  'capacitor-voltage-at',
 ]);
+
+/** Условия, которым нужен переходный режим в Задании. */
+const TRANSIENT_KINDS = new Set(['rc-time-constant', 'capacitor-voltage-at']);
 
 function questionsOf(module: CourseModule): Task[] {
   return module.tasks.filter((task) => task.kind !== 'circuit-task');
@@ -202,6 +208,37 @@ describe('Линтер: Схема-задания', () => {
       }
     }
   });
+
+  it('условия во времени требуют переходный режим, а план Задания здрав', () => {
+    for (const module of course.modules) {
+      for (const task of circuitTasksOf(module)) {
+        const where = `Задание ${task.id}`;
+        const needsTransient = task.conditions.some((condition) => TRANSIENT_KINDS.has(condition.kind));
+        if (needsTransient) {
+          expect(task.transient, `${where}: условие во времени без плана переходного режима`).toBeDefined();
+        }
+        if (task.transient === undefined) continue;
+        expect(
+          Number.isFinite(task.transient.duration) && task.transient.duration > 0,
+          `${where}: длительность переходного режима должна быть положительной`,
+        ).toBe(true);
+        if (task.transient.switchToggleTime !== undefined) {
+          const at = task.transient.switchToggleTime;
+          expect(
+            Number.isFinite(at) && at >= 0 && at < task.transient.duration,
+            `${where}: момент переключения должен лежать внутри плана`,
+          ).toBe(true);
+        }
+        for (const condition of task.conditions) {
+          if (condition.kind !== 'capacitor-voltage-at') continue;
+          expect(
+            Number.isFinite(condition.time) && condition.time > 0 && condition.time <= task.transient.duration,
+            `${where}: момент измерения напряжения должен лежать внутри плана`,
+          ).toBe(true);
+        }
+      }
+    }
+  });
 });
 
 describe('Линтер: заглушек не осталось', () => {
@@ -294,10 +331,15 @@ function circuitTaskIn(module: CourseModule, id: string): CircuitTask {
   return task;
 }
 
+/**
+ * Эталон-схема проходит все условия Задания через главный шов evaluate:
+ * вердикт строится тем же путём, что и для ответа ученика (переходный
+ * режим, Диагнозы и переключение ключей — всё как в живом приложении).
+ */
 function assertSolvable(task: CircuitTask, canvas: CanvasState): void {
-  const failed = checkConditions(canvas, solveDc(canvas), task.conditions)
-    .filter((check) => !check.passed)
-    .map((check) => check.text);
+  const verdict = evaluate(task, { kind: 'circuit-answer', canvas });
+  if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+  const failed = verdict.conditionChecks.filter((check) => !check.passed).map((check) => check.text);
   expect(failed, `Задание ${task.id} должно решаться эталон-схемой`).toEqual([]);
 }
 
@@ -418,6 +460,33 @@ describe('Схема-задания М2 решаемы: эталон-решен�
       circuitTaskOf('m2-diode-forward'),
       forwardRing(comp('d', 'diode'), comp('r1', 'resistor')),
     );
+  });
+
+  it('«заряди конденсатор к сроку»: резистор 19 кОм даёт τ = 1,9 с и ≈ 6,6 В к моменту t = 3 с', () => {
+    // ключ нарисован разомкнутым — переходный режим сам замыкает его в t = 0,5 с
+    assertSolvable(
+      circuitTaskOf('m2-capacitor-charge'),
+      ring(
+        comp('sw', 'switch', { closed: false }),
+        comp('r1', 'resistor', { resistance: 19_000 }),
+        comp('c', 'capacitor'),
+        comp('bat', 'battery'),
+      ),
+    );
+  });
+
+  it('«заряди конденсатор к сроку»: резистор по умолчанию (1 кОм) решение не проходит — τ измеряется', () => {
+    // слишком быстрый заряд: конденсатор уже полон задолго до контрольного момента
+    const canvas = ring(
+      comp('sw', 'switch', { closed: false }),
+      comp('r1', 'resistor'),
+      comp('c', 'capacitor'),
+      comp('bat', 'battery'),
+    );
+    const verdict = evaluate(circuitTaskOf('m2-capacitor-charge'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
   });
 });
 

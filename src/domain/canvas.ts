@@ -18,6 +18,7 @@ export const componentKinds = [
   'motor',
   'diode',
   'led',
+  'capacitor',
 ] as const;
 
 /** Тип выводится из списка: список и тип не могут разойтись. */
@@ -31,6 +32,12 @@ export const ledColors: readonly LedColor[] = ['red', 'yellow', 'green', 'blue']
 
 /** Цвет по умолчанию: постановка из Палитры и показания без явного цвета. */
 export const defaultLedColor: LedColor = 'red';
+
+/**
+ * Ёмкость конденсатора по умолчанию, Ф: 100 мкФ — учебный номинал, при
+ * котором постоянные времени с типовыми резисторами получаются в секундах.
+ */
+export const defaultCapacitance = 100e-6;
 
 /** Это цвет свечения светодиода? */
 export function isLedColor(value: unknown): value is LedColor {
@@ -50,7 +57,7 @@ export type Rotation = 0 | 90 | 180 | 270;
  * и номиналы. Номинал зависит от вида: батарея — voltage (В);
  * резистор, лампа, мотор — resistance (Ом); выключатель и ключ — closed;
  * светодиод — color (цвет свечения и заодно прямой порог); диод правимого
- * номинала не имеет.
+ * номинала не имеет; конденсатор — capacitance (Ф).
  */
 export interface PlacedComponent {
   readonly id: string;
@@ -62,6 +69,7 @@ export interface PlacedComponent {
   readonly resistance?: number;
   readonly closed?: boolean;
   readonly color?: LedColor;
+  readonly capacitance?: number;
 }
 
 /** Ссылка на вывод Компонента: идентификатор и номер вывода. */
@@ -114,6 +122,7 @@ export interface ComponentValuePatch {
   readonly resistance?: number;
   readonly closed?: boolean;
   readonly color?: LedColor;
+  readonly capacitance?: number;
 }
 
 /** История Холста: undo/redo — часть состояния, редьюсер остаётся чистым. */
@@ -136,10 +145,11 @@ const DEFAULT_VALUES: Record<ComponentKind, Omit<PlacedComponent, 'id' | 'kind' 
   motor: { resistance: 50 },
   diode: {},
   led: { color: 'red' },
+  capacitor: { capacitance: defaultCapacitance },
 };
 
 /** Какое номинальное поле носит вид Компонента. */
-export type ValueField = 'voltage' | 'resistance' | 'closed' | 'color' | 'none';
+export type ValueField = 'voltage' | 'resistance' | 'closed' | 'color' | 'capacitance' | 'none';
 
 const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   battery: 'voltage',
@@ -150,6 +160,7 @@ const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   pushbutton: 'closed',
   diode: 'none',
   led: 'color',
+  capacitor: 'capacitance',
 };
 
 /** Поле номинала вида: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — состояние. */
@@ -336,6 +347,10 @@ function applicableValuePatch(
       return patch.closed !== undefined ? { closed: patch.closed } : null;
     case 'color':
       return patch.color !== undefined && isLedColor(patch.color) ? { color: patch.color } : null;
+    case 'capacitance':
+      return patch.capacitance !== undefined && isPositiveNumber(patch.capacitance)
+        ? { capacitance: patch.capacitance }
+        : null;
     case 'none':
       // у диода нет правимого номинала — правка отклоняется целиком
       return null;

@@ -227,6 +227,16 @@ function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiag
     };
   }
 
+  // Заряженный конденсатор — законная причина нулевых токов: для постоянного
+  // тока он разрыв, и после заряда ток прекращается сам. Контур при этом
+  // замкнут, переключатели замкнуты, выводы подключены — обрыва здесь нет.
+  const chargedCapacitor = canvas.components.some((component) => {
+    if (component.kind !== 'capacitor') return false;
+    const reading = solution.readings.find((candidate) => candidate.componentId === component.id);
+    return reading !== undefined && Math.abs(reading.voltage) >= OPEN_CONTACT_MIN_VOLTAGE;
+  });
+  if (chargedCapacitor) return null;
+
   return {
     kind: 'open-circuit',
     text: 'Обрыв цепи: тока в схеме нет — контур не замкнут. Соедините Проводами полюса батареи с цепью.',

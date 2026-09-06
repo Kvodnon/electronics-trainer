@@ -4,8 +4,9 @@
  * Запятая и точка равнозначны; отсутствие суффикса — базовая единица (А, В, Ом).
  */
 
-/** Базовая единица величины числового Вопроса. */
-export type QuantityUnit = 'А' | 'В' | 'Ом' | 'Вт';
+/** Базовая единица величины: тока, напряжения, сопротивления, мощности —
+ * а с М2 ещё ёмкости (конденсатор) и времени (постоянная времени RC). */
+export type QuantityUnit = 'А' | 'В' | 'Ом' | 'Вт' | 'Ф' | 'с';
 
 /** Результат разбора: либо значение в базовой единице, либо сообщение ученику. */
 export type QuantityParseResult =
@@ -40,6 +41,18 @@ const UNIT_SUFFIXES: Record<
     { suffix: 'мВт', factor: 1e-3 },
     { suffix: 'Вт', factor: 1 },
   ],
+  'Ф': [
+    { suffix: 'пФ', factor: 1e-12 },
+    { suffix: 'нФ', factor: 1e-9 },
+    { suffix: 'мкФ', factor: 1e-6 },
+    { suffix: 'мФ', factor: 1e-3 },
+    { suffix: 'Ф', factor: 1 },
+  ],
+  'с': [
+    { suffix: 'мкс', factor: 1e-6 },
+    { suffix: 'мс', factor: 1e-3 },
+    { suffix: 'с', factor: 1 },
+  ],
 };
 
 /** Все допустимые суффиксы величины — для подсказок в сообщениях и UI. */
@@ -53,6 +66,8 @@ const UNIT_NOUNS: Record<QuantityUnit, string> = {
   'В': 'вольты',
   'Ом': 'омы',
   'Вт': 'ватты',
+  'Ф': 'фарады',
+  'с': 'секунды',
 };
 
 export function unitNoun(unit: QuantityUnit): string {
@@ -112,6 +127,8 @@ const PREFIX_STEPS: readonly { readonly factor: number; readonly prefix: string 
   { factor: 1, prefix: '' },
   { factor: 1e-3, prefix: 'м' },
   { factor: 1e-6, prefix: 'мк' },
+  { factor: 1e-9, prefix: 'н' },
+  { factor: 1e-12, prefix: 'п' },
 ];
 
 /** Приставка по порядку величины: выбирается первым подходящим шагом сверху. */

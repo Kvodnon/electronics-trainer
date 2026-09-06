@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CircuitTask } from '../../domain/task';
@@ -8,7 +8,7 @@ import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
 import { isExamTask } from '../../domain/course';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
-import { wireForwardDiode } from '../../testing/navigation';
+import { setResistance, wireForwardDiode } from '../../testing/navigation';
 import { CircuitTaskScreen } from './CircuitTaskScreen';
 
 /**
@@ -843,6 +843,154 @@ describe('Подсказки и Экзамен на экране Схема-за
     expect(screen.queryByText('Схема-задание')).not.toBeInTheDocument();
     // У экзамена тоже есть своя лестница Подсказок
     expect(screen.getByRole('button', { name: 'Подсказка' })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Переходный режим и Осциллограф (тикет 14): график напряжения во времени,
+ * проигрывание заряда с наполнением конденсатора, ёмкость в панели правки.
+ * Берём настоящее Схема-задание М2 «заряди конденсатор» из контента.
+ */
+describe('Осциллограф переходного режима', () => {
+  function capacitorTask(): CircuitTask {
+    const task = module2.tasks.find(
+      (candidate): candidate is CircuitTask => candidate.kind === 'circuit-task' && candidate.id === 'm2-capacitor-charge',
+    );
+    if (task === undefined) throw new Error('фикстура: в М2 нет задания m2-capacitor-charge');
+    return task;
+  }
+
+  /** Ставит батарею, выключатель, резистор и конденсатор и замыкает их в кольцо. */
+  async function assembleChargingLoop(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    // кольцо: вывод 2 каждого — к выводу 1 следующего (порядок по времени постановки)
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Конденсатор 4' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Конденсатор 4' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+  }
+
+  it('осциллограф рисует кривую заряда, отметку ключа и постоянной времени', async () => {
+    const user = userEvent.setup();
+    renderTask(capacitorTask());
+
+    expect(screen.getByRole('img', { name: 'График напряжения конденсатора во времени' })).toBeInTheDocument();
+    // пока на Холсте нет конденсатора, кривой нет — только сетка
+    expect(document.querySelector('polyline.scope-curve')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    expect(document.querySelectorAll('polyline.scope-curve')).toHaveLength(1);
+    expect(document.querySelector('.scope-toggle-mark')).not.toBeNull();
+    expect(screen.getByText('ключ', { selector: '.scope-mark-label' })).toBeInTheDocument();
+    // отметка τ стоит, потому что у конденсатора есть резистивный путь в конечном состоянии
+    expect(screen.getByText(/^τ = /, { selector: '.scope-mark-label' })).toBeInTheDocument();
+  });
+
+  it('без переходного режима в Задании осциллографа нет', () => {
+    renderTask();
+    expect(screen.queryByText('Осциллограф')).not.toBeInTheDocument();
+    expect(document.querySelector('svg.scope-svg')).toBeNull();
+  });
+
+  it('«Проиграть заряд» ведёт бегунок: показание времени растёт, конденсатор наполняется', async () => {
+    const user = userEvent.setup();
+    renderTask(capacitorTask());
+    expect(document.querySelector('.scope-playhead')).toBeNull();
+    expect(document.querySelector('.symbol-capacitor-charge')).toBeNull();
+
+    // для наполнения конденсатору нужна цепь: собираем контур заряда
+    await assembleChargingLoop(user);
+    await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
+
+    // в момент старта бегунок на нуле; дальше время бежит и конденсатор наполняется
+    expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
+    expect(document.querySelector('.scope-playhead')).not.toBeNull();
+    await waitFor(() => expect(document.querySelector('.symbol-capacitor-charge')).not.toBeNull());
+
+    // остановка останавливает: кнопка возвращается к проигрыванию
+    await user.click(screen.getByRole('button', { name: 'Остановить' }));
+    expect(screen.getByRole('button', { name: 'Проиграть заряд' })).toBeInTheDocument();
+  }, 10_000);
+
+  it('ёмкость конденсатора правится в панели правки и подписывается с приставкой', async () => {
+    const user = userEvent.setup();
+    renderTask(capacitorTask());
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор 1' }));
+
+    expect(screen.getByText('100 мкФ')).toBeInTheDocument();
+    const field = screen.getByLabelText('Номинал, Ф');
+    await user.clear(field);
+    await user.type(field, '200мкФ');
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+
+    expect(screen.getByText('200 мкФ')).toBeInTheDocument();
+  });
+
+  it('полный цикл: собранная и подогнанная схема проходит проверку по расчёту во времени', async () => {
+    const user = userEvent.setup();
+    /** Обвязка с настоящей проверкой, как в тестах «Проверить» выше. */
+    function Harness() {
+      const [answer, setAnswer] = useState<Answer | null>(null);
+      const [standard, setStandard] = useState<SymbolStandard>('gost');
+      const task = capacitorTask();
+      const evaluation = answer !== null ? evaluate(task, answer) : null;
+      return (
+        <CircuitTaskScreen
+          task={task}
+          evaluation={evaluationOfKind(evaluation, 'circuit-task')}
+          onAnswer={setAnswer}
+          onNext={() => undefined}
+          symbolStandard={standard}
+          onSymbolStandardChange={setStandard}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await assembleChargingLoop(user);
+    await setResistance(user, 'Резистор 3', '19кОм');
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Постоянная времени RC-цепи — 1,9 с, в границах/)).toBeInTheDocument();
+    expect(screen.getByText(/Напряжение на конденсаторе в момент t = 3 с — 6,59 В, в границах/)).toBeInTheDocument();
+  });
+
+  it('схема без подбора: заряд слишком быстрый — «работает, но не по условию» с числами', async () => {
+    const user = userEvent.setup();
+    function Harness() {
+      const [answer, setAnswer] = useState<Answer | null>(null);
+      const [standard, setStandard] = useState<SymbolStandard>('gost');
+      const task = capacitorTask();
+      const evaluation = answer !== null ? evaluate(task, answer) : null;
+      return (
+        <CircuitTaskScreen
+          task={task}
+          evaluation={evaluationOfKind(evaluation, 'circuit-task')}
+          onAnswer={setAnswer}
+          onNext={() => undefined}
+          symbolStandard={standard}
+          onSymbolStandardChange={setStandard}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await assembleChargingLoop(user);
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
+    expect(screen.getByText(/Постоянная времени RC-цепи — 100 мс/)).toBeInTheDocument();
   });
 });
 

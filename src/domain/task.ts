@@ -65,10 +65,26 @@ export interface NumericQuestion {
   readonly hints?: TaskHints;
 }
 
-/** Диапазон измерения в базовой единице (А, В, Ом, Вт), границы включительно. */
+/**
+ * Диапазон измерения в базовой единице (А, В, Ом, Вт, с, Ф), границы включительно.
+ */
 export interface MeasurementRange {
   readonly from: number;
   readonly to: number;
+}
+
+/**
+ * План переходного Симулятора (CONTEXT.md: Симулятор): сколько секунд
+ * моделируется и когда переключаются коммутаторы. До switchToggleTime
+ * выключатели и ключи стоят в нарисованном состоянии; в этот момент каждый
+ * переключается — разомкнутый замыкается, замкнутый размыкается.
+ * Конденсаторы стартуют незаряженными.
+ */
+export interface TransientPlan {
+  /** Длительность моделирования, с. */
+  readonly duration: number;
+  /** Момент переключения всех коммутаторов, с; нет — коммутаторы не трогаются. */
+  readonly switchToggleTime?: number;
 }
 
 /**
@@ -110,6 +126,20 @@ export type CircuitCondition =
       /** Активное состояние: лампочка горит, моторчик крутится, светодиод светится. */
       readonly componentKind: 'lamp' | 'motor' | 'led';
       readonly active: boolean;
+    }
+  | {
+      /** Постоянная времени RC-цепи, с: измеряется переходным Симулятором. */
+      readonly kind: 'rc-time-constant';
+      readonly componentKind: 'capacitor';
+      readonly range: MeasurementRange;
+    }
+  | {
+      /** Напряжение на конденсаторе в момент времени, В (из кривой Симуляции). */
+      readonly kind: 'capacitor-voltage-at';
+      readonly componentKind: 'capacitor';
+      /** Момент от начала Симуляции, с. */
+      readonly time: number;
+      readonly range: MeasurementRange;
     };
 
 /**
@@ -124,6 +154,12 @@ export interface CircuitTask {
   readonly palette: readonly ComponentKind[];
   /** Условия-измерения: все должны выполняться по решению Симулятора. */
   readonly conditions: readonly CircuitCondition[];
+  /**
+   * План переходного режима: Задание проверяется во времени (кривые
+   * напряжения конденсаторов), а условия-измерения во времени сверяются
+   * с ним. Без плана Задание проверяется по установившемуся режиму.
+   */
+  readonly transient?: TransientPlan;
   /**
    * Экзамен: финальное Схема-задание Модуля, объединяющее его темы; закрыто,
    * пока не пройдены все остальные Задания Модуля (правило живёт в домене Курса).

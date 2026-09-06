@@ -8,6 +8,7 @@ import type { CanvasState } from './canvas';
 import type { CircuitCondition } from './task';
 import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quantity';
 import { COMPONENT_LEXIS, cap, type ComponentLexis } from './componentLexis';
+import { voltageAt, type TransientSolution } from './transient';
 import {
   LAMP_LIT_POWER,
   LED_LIT_CURRENT,
@@ -35,12 +36,14 @@ export interface ConditionCheck {
 
 /**
  * Проверяет все условия Задания. Схема без Компонентов честно проваливает
- * любое условие — Разбор объяснит, чего не хватает.
+ * любое условие — Разбор объяснит, чего не хватает. Условия во времени
+ * сверяются с решением переходного режима, когда оно есть в Задании.
  */
 export function checkConditions(
   canvas: CanvasState,
   solution: DcSolution,
   conditions: readonly CircuitCondition[],
+  transient?: TransientSolution,
 ): readonly ConditionCheck[] {
   return conditions.map((condition) => {
     switch (condition.kind) {
@@ -52,6 +55,10 @@ export function checkConditions(
         return checkMeasurement(solution, condition, MEASUREMENT_TRAITS[condition.kind]);
       case 'component-active':
         return checkComponentActive(solution, condition);
+      case 'rc-time-constant':
+        return checkTimeConstant(transient, condition);
+      case 'capacitor-voltage-at':
+        return checkVoltageAtMoment(transient, condition);
     }
   });
 }
@@ -238,5 +245,103 @@ function checkComponentActive(
     text: `${fact} ${inactiveNote}`,
     componentId: candidate.componentId,
     measured: valueOf(candidate),
+  };
+}
+
+/**
+ * Конденсаторы с их измерением во времени: постоянной времени или напряжения
+ * в момент t. Кривая берётся из решения переходного режима; как и у измерений
+ * М1, годится любой конденсатор вида, чьё измерение попало в границы.
+ */
+
+/** Проверка постоянной времени RC-цепи по расчёту переходного режима. */
+function checkTimeConstant(
+  transient: TransientSolution | undefined,
+  condition: Extract<CircuitCondition, { kind: 'rc-time-constant' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  if (transient === undefined) {
+    return {
+      condition,
+      passed: false,
+      text: `${cap(lexis.nominative)} не измерен: в Задании нет переходного режима.`,
+    };
+  }
+  const candidates = [...transient.timeConstants.entries()];
+  if (candidates.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `Постоянная времени не измерена: на схеме нет ${lexis.genitivePlural}.`,
+    };
+  }
+
+  const inRange = ([, tau]: readonly [string, number]) => tau >= condition.range.from && tau <= condition.range.to;
+  const distance = ([, tau]: readonly [string, number]) => {
+    if (!Number.isFinite(tau)) return Number.POSITIVE_INFINITY;
+    if (tau < condition.range.from) return condition.range.from - tau;
+    if (tau > condition.range.to) return tau - condition.range.to;
+    return 0;
+  };
+  const candidate =
+    candidates.find(inRange) ??
+    candidates.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const [componentId, tau] = candidate;
+  const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'с');
+  const measured = Number.isFinite(tau)
+    ? `${formatQuantity(tau, 'с')}, ${inRange(candidate) ? 'в границах' : 'вне границ'} условия`
+    : 'не определяется: у конденсатора нет резистивного пути заряда';
+  return {
+    condition,
+    passed: inRange(candidate),
+    text: `Постоянная времени RC-цепи — ${measured} (${bounds}).`,
+    componentId,
+    measured: Number.isFinite(tau) ? tau : undefined,
+  };
+}
+
+/** Проверка напряжения на конденсаторе в момент времени по кривой переходного режима. */
+function checkVoltageAtMoment(
+  transient: TransientSolution | undefined,
+  condition: Extract<CircuitCondition, { kind: 'capacitor-voltage-at' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const moment = `в момент t = ${formatQuantity(condition.time, 'с')}`;
+  if (transient === undefined) {
+    return {
+      condition,
+      passed: false,
+      text: `Напряжение на ${lexis.prepositional} ${moment} не измерено: в Задании нет переходного режима.`,
+    };
+  }
+  const capacitorIds = [...transient.capacitorVoltages.keys()];
+  if (capacitorIds.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `Напряжение ${moment} не измерено: на схеме нет ${lexis.genitivePlural}.`,
+    };
+  }
+
+  const measured = capacitorIds.map((id) => ({ id, voltage: Math.abs(voltageAt(transient, id, condition.time) ?? 0) }));
+  const inRange = (entry: { id: string; voltage: number }) =>
+    entry.voltage >= condition.range.from && entry.voltage <= condition.range.to;
+  const distance = (entry: { id: string; voltage: number }) => {
+    if (entry.voltage < condition.range.from) return condition.range.from - entry.voltage;
+    if (entry.voltage > condition.range.to) return entry.voltage - condition.range.to;
+    return 0;
+  };
+  const candidate =
+    measured.find(inRange) ??
+    measured.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'В');
+  return {
+    condition,
+    passed: inRange(candidate),
+    text: `Напряжение на ${lexis.prepositional} ${moment} — ${formatQuantity(candidate.voltage, 'В')}, ${
+      inRange(candidate) ? 'в границах' : 'вне границ'
+    } условия (${bounds}).`,
+    componentId: candidate.id,
+    measured: candidate.voltage,
   };
 }

@@ -7,6 +7,7 @@ import type { CanvasState } from './canvas';
 import { checkConditions, type ConditionCheck } from './circuitConditions';
 import { diagnoseCircuit, type CircuitDiagnosis } from './circuitDiagnoses';
 import { solveDc, type DcSolution } from './simulator';
+import { solveTransient, toggledContactStates, type TransientSolution } from './transient';
 
 /** Ответ ученика на Вопрос с выбором варианта. */
 export interface ChoiceAnswer {
@@ -84,6 +85,8 @@ export interface CircuitTaskEvaluation {
   readonly diagnoses: readonly CircuitDiagnosis[];
   /** Расчёт, на котором построен вердикт: токи и напряжения собранной схемы. */
   readonly solution: DcSolution;
+  /** Кривые переходного режима, если он есть в Задании: для условий во времени. */
+  readonly transient?: TransientSolution;
 }
 
 /** Вердикт проверки Задания. */
@@ -167,11 +170,16 @@ function evaluateNumeric(
 /**
  * Проверка Схема-задания: Симулятор считает токи и напряжения, условия
  * проверяются по решению, Диагноз называет причину провала и место ошибки.
- * Эквивалентные схемы дают одинаковый исход.
+ * Эквивалентные схемы дают одинаковый исход. Задание с переходным режимом
+ * проверяется после переключения коммутаторов — именно при этой топологии
+ * течёт процесс, который сверяется с условиями во времени.
  */
 function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskEvaluation {
-  const solution = solveDc(answer.canvas);
-  const conditionChecks = checkConditions(answer.canvas, solution, task.conditions);
+  const transient = task.transient !== undefined ? solveTransient(answer.canvas, task.transient) : undefined;
+  const solution = solveDc(answer.canvas, {
+    contactStates: transient !== undefined ? toggledContactStates(answer.canvas) : undefined,
+  });
+  const conditionChecks = checkConditions(answer.canvas, solution, task.conditions, transient);
   const diagnoses = diagnoseCircuit(answer.canvas, solution, conditionChecks);
   const outcome: CircuitOutcome = conditionChecks.every((check) => check.passed)
     ? 'correct'
@@ -184,5 +192,6 @@ function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskE
     conditionChecks,
     diagnoses,
     solution,
+    transient,
   };
 }

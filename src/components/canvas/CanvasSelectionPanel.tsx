@@ -28,7 +28,11 @@ export function CanvasSelectionPanel({
   return (
     <div className="canvas-selection">
       <p className="canvas-selection-name">{name}</p>
-      <ComponentValueForm key={`${component.id}:${component.voltage ?? component.resistance ?? String(component.closed)}`} component={component} onApply={onValueSet} />
+      <ComponentValueForm
+        key={`${component.id}:${component.voltage ?? component.resistance ?? component.capacitance ?? String(component.closed)}`}
+        component={component}
+        onApply={onValueSet}
+      />
       <div className="canvas-selection-actions">
         <button type="button" className="button-secondary" onClick={onRotate}>
           Повернуть
@@ -42,7 +46,8 @@ export function CanvasSelectionPanel({
 }
 
 /** Форма номинала: батарея — напряжение, резистор/лампа/мотор — сопротивление,
- * коммутаторы — замкнут, светодиод — цвет свечения; у диода правимого поля нет. */
+ * коммутаторы — замкнут, светодиод — цвет свечения, конденсатор — ёмкость;
+ * у диода правимого поля нет. */
 function ComponentValueForm({
   component,
   onApply,
@@ -85,8 +90,13 @@ function ComponentValueForm({
     );
   }
 
-  const unit: QuantityUnit = field === 'voltage' ? 'В' : 'Ом';
-  const value = field === 'voltage' ? component.voltage : component.resistance;
+  /** Числовой номинал: поле Компонента, его единица и текущее значение. */
+  const NUMERIC_FIELDS = {
+    voltage: { unit: 'В' as QuantityUnit, value: component.voltage },
+    resistance: { unit: 'Ом' as QuantityUnit, value: component.resistance },
+    capacitance: { unit: 'Ф' as QuantityUnit, value: component.capacitance },
+  };
+  const { unit, value } = NUMERIC_FIELDS[field];
   const [raw, setRaw] = useState(String(value ?? '').replace('.', ','));
   const [error, setError] = useState<string | null>(null);
 
@@ -97,7 +107,13 @@ function ComponentValueForm({
       return;
     }
     setError(null);
-    onApply(field === 'voltage' ? { voltage: parsed.value } : { resistance: parsed.value });
+    onApply(
+      field === 'voltage'
+        ? { voltage: parsed.value }
+        : field === 'resistance'
+          ? { resistance: parsed.value }
+          : { capacitance: parsed.value },
+    );
   }
 
   return (

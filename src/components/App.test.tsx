@@ -31,7 +31,7 @@ function seedModule1Progress(except: readonly string[] = []): void {
   );
 }
 
-/** Отвечает на три Вопроса М2 (диод, ток светодиода, конденсатор) — очередь доходит до Схема-заданий. */
+/** Отвечает на Вопросы М2 (диод, ток светодиода, конденсатор, τ) — очередь доходит до Схема-заданий. */
 async function passModule2Questions(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
@@ -39,6 +39,9 @@ async function passModule2Questions(user: ReturnType<typeof userEvent.setup>): P
   await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
   await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '1с');
+  await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
 }
 
@@ -49,9 +52,9 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 6 (тикет 13)
+    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 8 (тикет 14)
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 8')).toBeInTheDocument();
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
@@ -278,6 +281,20 @@ describe('Схема-задание в потоке Курса', () => {
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
+    // «заряди конденсатор к сроку»: ключ сам замкнётся в t = 0,5 с,
+    // резистор 19 кОм даёт τ = 1,9 с и ≈ 6,6 В к контрольному моменту t = 3 с
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    await wireRing(user, ['Батарея 1', 'Конденсатор 4', 'Резистор 3', 'Выключатель 2']);
+    await setResistance(user, 'Резистор 3', '19кОм');
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Постоянная времени RC-цепи/)).toBeInTheDocument();
+    expect(screen.getByText(/в момент t = 3 с/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
     // Экзамен М2 — моторчик должен крутиться при токе 60–100 мА
     expect(screen.getByText('Экзамен')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
@@ -345,6 +362,7 @@ describe('Песочница', () => {
     expect(screen.getByRole('button', { name: 'Моторчик' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Диод' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Светодиод' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Конденсатор' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Проверить' })).not.toBeInTheDocument();
 
     // контур из батареи и лампочки, сохранение под именем
@@ -453,7 +471,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     window.localStorage.clear();
     const secondRender = render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 8')).toBeInTheDocument();
 
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
     expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
@@ -513,7 +531,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 8')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
@@ -524,6 +542,6 @@ describe('Данные: экспорт, импорт и сброс', () => {
     firstRender.unmount();
     render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 6')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 8')).toBeInTheDocument();
   });
 });
