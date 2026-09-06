@@ -188,7 +188,7 @@ describe('Провода', () => {
     expect(screen.getByText(/Проведите Провод до второго вывода/)).toBeInTheDocument();
   });
 
-  it('Провод удаляется выбором и кнопкой; соединение виден и после отмены', async () => {
+  it('Провод выбирается кликом и удаляется кнопкой', async () => {
     const user = userEvent.setup();
     render(<CircuitTaskScreen task={demoTask} />);
     await user.click(screen.getByRole('button', { name: 'Батарея' }));

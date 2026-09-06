@@ -114,7 +114,7 @@ describe('Холст: перемещение Компонентов', () => {
 
   it('Перемещение неизвестного Компонента — состояние без изменений', () => {
     const history = historyWithPlaced(['battery']);
-    const next = canvasReducer(history, { type: 'component-moved', componentId: 'нет-такого', x: 0, y: 0 });
+    const next = canvasReducer(history, { type: 'component-moved', componentId: 'missing-component', x: 0, y: 0 });
     expect(next).toBe(history);
   });
 });
@@ -172,13 +172,16 @@ describe('Холст: номиналы Компонентов', () => {
     expect(history.present.components[0].closed).toBe(false);
   });
 
-  it('Отрицательные и нечисловые номиналы отклоняются; неизвестный Компонент — без изменений', () => {
-    const history = historyWithPlaced(['battery']);
+  it('Отрицательные, нечисловые и чужие номиналы отклоняются; неизвестный Компонент — без изменений', () => {
+    let history = historyWithPlaced(['battery', 'lamp']);
     const negative = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: -3 } });
     const notANumber = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: Number.NaN } });
-    const unknown = canvasReducer(history, { type: 'component-value-set', componentId: 'x', patch: { voltage: 5 } });
+    // Напряжение — поле батареи, к лампе оно не прилипает (Симулятор тикета 05 читает эти объекты)
+    const wrongKind = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { voltage: 5 } });
+    const unknown = canvasReducer(history, { type: 'component-value-set', componentId: 'missing', patch: { voltage: 5 } });
     expect(negative).toBe(history);
     expect(notANumber).toBe(history);
+    expect(wrongKind).toBe(history);
     expect(unknown).toBe(history);
   });
 });
@@ -263,6 +266,17 @@ describe('Холст: сериализация', () => {
 
     const restored: typeof history.present = JSON.parse(JSON.stringify(history.present));
     expect(restored).toEqual(history.present);
+
+    // Восстановленное состояние полноценно живёт: редактирование продолжается
+    // без конфликтов идентификаторов, undo/redo работают
+    const continued = canvasReducer(
+      { past: [], present: restored, future: [] },
+      { type: 'component-placed', kind: 'pushbutton', x: 700, y: 300 },
+    );
+    expect(continued.present.components.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4', 'c5']);
+    const undone = canvasReducer(continued, { type: 'undo' });
+    expect(undone.present.components).toHaveLength(4);
+    expect(undone.present.wires).toHaveLength(2);
   });
 });
 
@@ -313,7 +327,7 @@ describe('Холст: Провода', () => {
     const missingComponent = canvasReducer(history, {
       type: 'wire-drawn',
       from: { componentId: 'c1', pin: 0 },
-      to: { componentId: 'нет', pin: 0 },
+      to: { componentId: 'missing-component', pin: 0 },
     });
     expect(missingComponent).toBe(history);
   });
@@ -327,6 +341,6 @@ describe('Холст: Провода', () => {
 
     expect(history.present.wires).toHaveLength(1);
     expect(history.present.wires[0].to).toEqual({ componentId: 'c3', pin: 0 });
-    expect(canvasReducer(history, { type: 'wire-removed', wireId: 'нет' })).toBe(history);
+    expect(canvasReducer(history, { type: 'wire-removed', wireId: 'missing-wire' })).toBe(history);
   });
 });

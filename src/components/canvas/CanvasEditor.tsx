@@ -9,7 +9,6 @@ import {
   emptyHistory,
   suggestPlacementPosition,
   type ComponentKind,
-  type ComponentValuePatch,
   type PlacedComponent,
   type PinRef,
 } from '../../domain/canvas';
@@ -22,8 +21,13 @@ import {
   type DirectedPoint,
   type Point,
 } from '../../domain/canvasGeometry';
-import { parseQuantity, type QuantityUnit } from '../../domain/quantity';
 import { CanvasSymbolBody, PaletteSymbol, componentTitles, componentValueLabel } from './CanvasSymbols';
+import { CanvasSelectionPanel } from './CanvasSelectionPanel';
+
+/** Радиус зоны захвата символа Компонента мышью. */
+const COMPONENT_HIT_RADIUS = 34;
+/** Подпись номинала — над символом, вне повёрнутой группы. */
+const LABEL_OFFSET_Y = -38;
 
 /**
  * Редактор Холста: тонкий слой над домен-редьюсером. Вся логика редактора
@@ -58,9 +62,11 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const components = canvas.components;
+  /** Компоненты по идентификатору: выборка для жестов, имён и Проводов. */
+  const componentById = new Map(components.map((c) => [c.id, c]));
   const selectedComponent =
     selection !== null && selection.kind === 'component'
-      ? (components.find((c) => c.id === selection.id) ?? null)
+      ? (componentById.get(selection.id) ?? null)
       : null;
 
   /** Компонент с текущей позицией перетаскивания — для живой перерисовки Проводов. */
@@ -118,7 +124,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
 
   function endDrag() {
     if (drag === null) return;
-    const original = components.find((c) => c.id === drag.componentId);
+    const original = componentById.get(drag.componentId);
     if (original && (original.x !== drag.position.x || original.y !== drag.position.y)) {
       dispatch({
         type: 'component-moved',
@@ -132,7 +138,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
 
   function handlePinClick(ref: PinRef, event: ReactMouseEvent) {
     event.stopPropagation();
-    const component = components.find((c) => c.id === ref.componentId);
+    const component = componentById.get(ref.componentId);
     if (component === undefined) return;
     if (wireDraft === null) {
       const origin = pinPointOf(component, ref.pin);
@@ -192,17 +198,16 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
   }
 
   const wireFrom = (ref: PinRef): DirectedPoint => {
-    const component = components.find((c) => c.id === ref.componentId);
+    const component = componentById.get(ref.componentId);
     if (component === undefined) return { x: 0, y: 0, dx: 0, dy: 0 };
     return pinPointOf(withDrag(component), ref.pin);
   };
 
-  const componentIndex = new Map(components.map((c, index) => [c.id, index + 1]));
   const componentName = (id: string): string => {
-    const component = components.find((c) => c.id === id);
-    return component === undefined
-      ? ''
-      : `${componentTitles[component.kind]} ${componentIndex.get(id) ?? ''}`.trim();
+    const component = componentById.get(id);
+    if (component === undefined) return '';
+    const index = components.findIndex((c) => c.id === id) + 1;
+    return `${componentTitles[component.kind]} ${index}`.trim();
   };
 
   return (
@@ -329,7 +334,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
               transform={`translate(${shown.x} ${shown.y}) rotate(${component.rotation})`}
               onMouseDown={(event) => beginDrag(component, event)}
             >
-              <circle className="canvas-component-hit" r="34" />
+              <circle className="canvas-component-hit" r={COMPONENT_HIT_RADIUS} />
               <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <CanvasSymbolBody component={component} />
               </g>
@@ -342,7 +347,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
             key={`${component.id}:label`}
             className="canvas-label"
             x={withDrag(component).x}
-            y={withDrag(component).y - 38}
+            y={withDrag(component).y + LABEL_OFFSET_Y}
             textAnchor="middle"
           >
             {componentValueLabel(component)}
@@ -373,22 +378,15 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
       </svg>
 
       {selectedComponent !== null ? (
-        <div className="canvas-selection">
-          <p className="canvas-selection-name">{componentName(selectedComponent.id)}</p>
-          <ComponentValueForm
-            key={`${selectedComponent.id}:${componentValueLabel(selectedComponent)}`}
-            component={selectedComponent}
-            onApply={(patch) => dispatch({ type: 'component-value-set', componentId: selectedComponent.id, patch })}
-          />
-          <div className="canvas-selection-actions">
-            <button type="button" className="button-secondary" onClick={rotateSelection}>
-              Повернуть
-            </button>
-            <button type="button" className="button-secondary button-danger" onClick={removeSelection}>
-              Удалить
-            </button>
-          </div>
-        </div>
+        <CanvasSelectionPanel
+          component={selectedComponent}
+          name={componentName(selectedComponent.id)}
+          onRotate={rotateSelection}
+          onRemove={removeSelection}
+          onValueSet={(patch) =>
+            dispatch({ type: 'component-value-set', componentId: selectedComponent.id, patch })
+          }
+        />
       ) : selection !== null && selection.kind === 'wire' ? (
         <div className="canvas-selection">
           <p className="canvas-selection-name">Провод</p>
@@ -413,65 +411,4 @@ function DraftWire({ draft, from }: { draft: WireDraftState; from: DirectedPoint
   const route = routeWire(from, { x: draft.cursor.x, y: draft.cursor.y, dx: 0, dy: 0 });
   const points = route.map((point) => `${point.x},${point.y}`).join(' ');
   return <polyline className="wire-draft" points={points} />;
-}
-
-/** Форма номинала: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — замкнут. */
-function ComponentValueForm({
-  component,
-  onApply,
-}: {
-  component: PlacedComponent;
-  onApply: (patch: ComponentValuePatch) => void;
-}) {
-  const isSwitch = component.kind === 'switch' || component.kind === 'pushbutton';
-  const unit: QuantityUnit = component.kind === 'battery' ? 'В' : 'Ом';
-  const value = component.kind === 'battery' ? component.voltage : component.resistance;
-  const [raw, setRaw] = useState(String(value ?? '').replace('.', ','));
-  const [error, setError] = useState<string | null>(null);
-
-  if (isSwitch) {
-    return (
-      <label className="canvas-value-toggle">
-        <input
-          type="checkbox"
-          checked={component.closed ?? false}
-          onChange={(event) => onApply({ closed: event.target.checked })}
-        />
-        замкнут
-      </label>
-    );
-  }
-
-  function submit() {
-    const parsed = parseQuantity(raw, unit);
-    if (parsed.status === 'error') {
-      setError(parsed.message);
-      return;
-    }
-    setError(null);
-    onApply(component.kind === 'battery' ? { voltage: parsed.value } : { resistance: parsed.value });
-  }
-
-  return (
-    <form
-      className="canvas-value-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <label htmlFor={`canvas-value-${component.id}`}>Номинал, {unit}</label>
-      <input
-        id={`canvas-value-${component.id}`}
-        className="numeric-input-field"
-        value={raw}
-        onChange={(event) => setRaw(event.target.value)}
-        aria-invalid={error !== null}
-      />
-      <button type="submit" className="button-primary">
-        Применить
-      </button>
-      {error !== null && <p className="input-error">{error}</p>}
-    </form>
-  );
 }

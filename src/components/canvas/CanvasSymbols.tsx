@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { ComponentKind, PlacedComponent } from '../../domain/canvas';
-import { defaultValuesOf } from '../../domain/canvas';
+import { defaultValuesOf, valueFieldOf } from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
 
 /**
@@ -23,15 +23,12 @@ export const componentTitles: Record<ComponentKind, string> = {
 
 /** Подпись номинала рядом с Компонентом на Холсте. */
 export function componentValueLabel(component: PlacedComponent): string {
-  switch (component.kind) {
-    case 'battery':
+  switch (valueFieldOf(component.kind)) {
+    case 'voltage':
       return formatQuantity(component.voltage ?? 0, 'В');
-    case 'resistor':
-    case 'lamp':
-    case 'motor':
+    case 'resistance':
       return formatQuantity(component.resistance ?? 0, 'Ом');
-    case 'switch':
-    case 'pushbutton':
+    case 'closed':
       return component.closed ? 'замкнут' : 'разомкнут';
   }
 }

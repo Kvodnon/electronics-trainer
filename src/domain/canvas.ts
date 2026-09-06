@@ -101,6 +101,23 @@ const DEFAULT_VALUES: Record<ComponentKind, Omit<PlacedComponent, 'id' | 'kind' 
   motor: { resistance: 50 },
 };
 
+/** Какое номинальное поле носит вид Компонента. */
+export type ValueField = 'voltage' | 'resistance' | 'closed';
+
+const VALUE_FIELD: Record<ComponentKind, ValueField> = {
+  battery: 'voltage',
+  resistor: 'resistance',
+  lamp: 'resistance',
+  motor: 'resistance',
+  switch: 'closed',
+  pushbutton: 'closed',
+};
+
+/** Поле номинала вида: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — состояние. */
+export function valueFieldOf(kind: ComponentKind): ValueField {
+  return VALUE_FIELD[kind];
+}
+
 /** Номиналы вида по умолчанию — для предпросмотра в Палитре. */
 export function defaultValuesOf(
   kind: ComponentKind,
@@ -172,29 +189,16 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
         wires: history.present.wires,
       });
     }
-    case 'component-moved': {
-      const state = history.present;
-      let moved = false;
-      const components = state.components.map((component) => {
-        if (component.id !== action.componentId) return component;
-        moved = true;
-        return { ...component, ...placement(action.x, action.y) };
-      });
-      // Неизвестный идентификатор — состояние не меняется вовсе (то же сравнение).
-      if (!moved) return history;
-      return withHistory(history, { components, wires: state.wires });
-    }
-    case 'component-rotated': {
-      const state = history.present;
-      let rotated = false;
-      const components = state.components.map((component) => {
-        if (component.id !== action.componentId) return component;
-        rotated = true;
-        return { ...component, rotation: nextRotation(component.rotation) };
-      });
-      if (!rotated) return history;
-      return withHistory(history, { components, wires: state.wires });
-    }
+    case 'component-moved':
+      return withUpdatedComponent(history, action.componentId, (component) => ({
+        ...component,
+        ...placement(action.x, action.y),
+      }));
+    case 'component-rotated':
+      return withUpdatedComponent(history, action.componentId, (component) => ({
+        ...component,
+        rotation: nextRotation(component.rotation),
+      }));
     case 'component-removed': {
       const state = history.present;
       const components = state.components.filter((c) => c.id !== action.componentId);
@@ -234,17 +238,14 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
       return withHistory(history, { components: state.components, wires: [...state.wires, wire] });
     }
     case 'component-value-set': {
-      const patch = sanitizeValuePatch(action.patch);
+      const component = history.present.components.find((c) => c.id === action.componentId);
+      if (!component) return history;
+      const patch = applicableValuePatch(component.kind, action.patch);
       if (!patch) return history;
-      const state = history.present;
-      let updated = false;
-      const components = state.components.map((component) => {
-        if (component.id !== action.componentId) return component;
-        updated = true;
-        return { ...component, ...patch };
-      });
-      if (!updated) return history;
-      return withHistory(history, { components, wires: state.wires });
+      return withUpdatedComponent(history, action.componentId, (current) => ({
+        ...current,
+        ...patch,
+      }));
     }
     case 'canvas-reset':
       return withHistory(history, emptyCanvas);
@@ -270,20 +271,51 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
 }
 
 /**
- * Номинал имеет смысл только конечный и положительный: обрыв цепи рисуется
- * удалением Компонента, а не нулевым сопротивлением. Некорректная правка
- * отклоняется целиком.
+ * Правка номинала: остаётся только поле своего вида (лампа не «напрягается»
+ * чужим напряжением) и только конечное положительное число — обрыв цепи
+ * рисуется удалением Компонента, а не нулевым сопротивлением. Некорректная
+ * правка отклоняется целиком.
  */
-function sanitizeValuePatch(patch: ComponentValuePatch): ComponentValuePatch | null {
-  if (patch.voltage !== undefined && !isPositiveNumber(patch.voltage)) return null;
-  if (patch.resistance !== undefined && !isPositiveNumber(patch.resistance)) return null;
-  const hasField =
-    patch.voltage !== undefined || patch.resistance !== undefined || patch.closed !== undefined;
-  return hasField ? { ...patch } : null;
+function applicableValuePatch(
+  kind: ComponentKind,
+  patch: ComponentValuePatch,
+): ComponentValuePatch | null {
+  switch (VALUE_FIELD[kind]) {
+    case 'voltage':
+      return patch.voltage !== undefined && isPositiveNumber(patch.voltage)
+        ? { voltage: patch.voltage }
+        : null;
+    case 'resistance':
+      return patch.resistance !== undefined && isPositiveNumber(patch.resistance)
+        ? { resistance: patch.resistance }
+        : null;
+    case 'closed':
+      return patch.closed !== undefined ? { closed: patch.closed } : null;
+  }
 }
 
 function isPositiveNumber(value: number): boolean {
   return Number.isFinite(value) && value > 0;
+}
+
+/**
+ * Обновляет один Компонент и записывает результат в историю.
+ * Неизвестный идентификатор — состояние не меняется вовсе (то же сравнение).
+ */
+function withUpdatedComponent(
+  history: CanvasHistory,
+  componentId: string,
+  update: (component: PlacedComponent) => PlacedComponent,
+): CanvasHistory {
+  const state = history.present;
+  let updated = false;
+  const components = state.components.map((component) => {
+    if (component.id !== componentId) return component;
+    updated = true;
+    return update(component);
+  });
+  if (!updated) return history;
+  return withHistory(history, { components, wires: state.wires });
 }
 
 /** Записывает новое состояние Холста в историю: настоящее уходит в прошлое. */
