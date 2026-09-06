@@ -1,6 +1,6 @@
 import { useReducer, useMemo, useState } from 'react';
 import type { CircuitTask } from '../../domain/task';
-import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canvas';
+import { canvasReducer, emptyHistory, type CanvasState, type PinRef } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
 import { symbolStandards } from '../../domain/symbols';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
@@ -10,7 +10,15 @@ import {
   solveDc,
   wireCurrents,
   type ComponentReading,
+  type DcSolution,
 } from '../../domain/simulator';
+import {
+  measureCurrent,
+  measureVoltage,
+  type MultimeterMode,
+  type MultimeterReading,
+} from '../../domain/multimeter';
+import { formatQuantity } from '../../domain/quantity';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
 import { standardTitles } from './CanvasSymbols';
 
@@ -30,8 +38,8 @@ interface CircuitTaskScreenProps {
  * ответом в `evaluate` (Симулятор считает токи и напряжения), вердикт
  * показывается, пока схема не изменилась — после правки Разбор снимается,
  * чтобы не врать устаревшими числами. Живое поведение (свечение лампочки,
- * вращение моторчика) считается по текущей схеме на каждое её изменение;
- * числовой оверлей и подсветка места ошибки — только по вердикту.
+ * вращение моторчика) и Мультиметр считаются по текущей схеме на каждое её
+ * изменение; числовой оверлей и подсветка места ошибки — только по вердикту.
  * Стандарт обозначений приходит снаружи: переключатель меняет только
  * отрисовку, собранная схема остаётся как была.
  */
@@ -49,14 +57,70 @@ export function CircuitTaskScreen({
   const [showReadings, setShowReadings] = useState(false);
   const shownEvaluation = submitted !== null && history.present === submitted ? evaluation : null;
 
-  /** Живое поведение схемы: пересчёт на каждое изменение Холста. */
-  const liveReadings = useMemo(() => {
+  /** Живое решение схемы: пересчёт на каждое изменение Холста; сбой — null. */
+  const liveSolution = useMemo<DcSolution | null>(() => {
     try {
-      return readingsByComponent(solveDc(history.present));
+      return solveDc(history.present);
     } catch {
-      return new Map<string, ComponentReading>();
+      return null;
     }
   }, [history.present]);
+
+  /** Живое поведение Холста: лампочка светится, моторчик вращается. */
+  const liveReadings = useMemo(
+    () => (liveSolution === null ? new Map<string, ComponentReading>() : readingsByComponent(liveSolution)),
+    [liveSolution],
+  );
+
+  /** Мультиметр: включённость, режим и приложенные щупы (точки или ветвь). */
+  const [multimeterOn, setMultimeterOn] = useState(false);
+  const [multimeterMode, setMultimeterMode] = useState<MultimeterMode>('voltage');
+  const [probes, setProbes] = useState<{ red: PinRef | null; black: PinRef | null; branch: string | null }>({
+    red: null,
+    black: null,
+    branch: null,
+  });
+  /** Какой щуп приложится следующим кликом по точке: красный, затем чёрный. */
+  const [nextProbe, setNextProbe] = useState<'red' | 'black'>('red');
+
+  function clearProbes() {
+    setProbes({ red: null, black: null, branch: null });
+    setNextProbe('red');
+  }
+
+  function toggleMultimeter(on: boolean) {
+    setMultimeterOn(on);
+    clearProbes();
+  }
+
+  function changeMultimeterMode(mode: MultimeterMode) {
+    setMultimeterMode(mode);
+    clearProbes();
+  }
+
+  function applyPinProbe(ref: PinRef) {
+    if (nextProbe === 'red') setProbes((current) => ({ ...current, red: ref }));
+    else setProbes((current) => ({ ...current, black: ref }));
+    setNextProbe(nextProbe === 'red' ? 'black' : 'red');
+  }
+
+  function applyBranchProbe(componentId: string) {
+    setProbes((current) => ({ ...current, branch: componentId }));
+  }
+
+  const probesApplied =
+    multimeterMode === 'voltage' ? probes.red !== null && probes.black !== null : probes.branch !== null;
+
+  /** Показание Мультиметра: из живого решения, обновляется с любым изменением схемы. */
+  const multimeterReading = useMemo<MultimeterReading | null>(() => {
+    if (!multimeterOn || liveSolution === null) return null;
+    if (multimeterMode === 'voltage') {
+      return probes.red !== null && probes.black !== null
+        ? measureVoltage(liveSolution, probes.red, probes.black)
+        : null;
+    }
+    return probes.branch !== null ? measureCurrent(liveSolution, probes.branch) : null;
+  }, [multimeterOn, multimeterMode, probes, liveSolution]);
 
   /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
   const overlay = useMemo<CanvasOverlay | null>(() => {
@@ -91,8 +155,57 @@ export function CircuitTaskScreen({
         liveReadings={liveReadings}
         overlay={overlay}
         faultSpot={faultSpot}
+        multimeter={
+          multimeterOn
+            ? {
+                mode: multimeterMode,
+                redProbe: probes.red,
+                blackProbe: probes.black,
+                branchProbe: probes.branch,
+                onPinProbe: applyPinProbe,
+                onBranchProbe: applyBranchProbe,
+                onClearProbes: clearProbes,
+              }
+            : null
+        }
         actions={
           <>
+            <label className="multimeter-toggle">
+              <input
+                type="checkbox"
+                checked={multimeterOn}
+                onChange={(event) => toggleMultimeter(event.target.checked)}
+              />
+              Мультиметр
+            </label>
+            {multimeterOn && (
+              <span className="multimeter">
+                <select
+                  className="multimeter-mode"
+                  aria-label="Режим мультиметра"
+                  value={multimeterMode}
+                  onChange={(event) => changeMultimeterMode(event.target.value as MultimeterMode)}
+                >
+                  <option value="voltage">Напряжение</option>
+                  <option value="current">Ток</option>
+                </select>
+                <output
+                  className={`multimeter-display${
+                    multimeterReading === null && probesApplied ? ' multimeter-display-unavailable' : ''
+                  }`}
+                  aria-live="polite"
+                  title={
+                    multimeterReading === null && probesApplied
+                      ? 'Между щупами нет общей цепи — измерение невозможно'
+                      : undefined
+                  }
+                >
+                  {multimeterReading !== null
+                    ? formatQuantity(multimeterReading.value, multimeterReading.unit)
+                    : '—'}
+                </output>
+              </span>
+            )}
             <label className="overlay-toggle">
               <input
                 type="checkbox"

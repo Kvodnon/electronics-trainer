@@ -43,6 +43,18 @@ export interface ComponentReading {
 /** Решение схемы постоянного тока: показание на каждый Компонент Холста. */
 export interface DcSolution {
   readonly readings: readonly ComponentReading[];
+  /**
+   * Узел каждого вывода (ключ — pinKey): потенциал в вольтах относительно
+   * земли своего острова и имя острова. Для Мультиметра: напряжение между
+   * любыми двумя точками схемы; щупы разных островов общей цепи не имеют.
+   */
+  readonly pinNodes: ReadonlyMap<string, PinNode>;
+}
+
+/** Узел вывода: имя острова и потенциал (В) относительно земли острова. */
+export interface PinNode {
+  readonly island: string;
+  readonly voltage: number;
 }
 
 /** Показание Компонента по идентификатору; нет такого — null. */
@@ -226,7 +238,18 @@ export function solveDc(canvas: CanvasState): DcSolution {
   }
 
   const readings = branches.map((branch) => readingOfBranch(branch, nodeVoltage));
-  return { readings };
+  const pinNodes = new Map<string, PinNode>();
+  for (const branch of branches) {
+    pinNodes.set(pinKey(branch.component.id, 0), {
+      island: findIsland(branch.nodeA),
+      voltage: nodeVoltage[branch.nodeA],
+    });
+    pinNodes.set(pinKey(branch.component.id, 1), {
+      island: findIsland(branch.nodeB),
+      voltage: nodeVoltage[branch.nodeB],
+    });
+  }
+  return { readings, pinNodes };
 }
 
 /** Собирает и решает узловые уравнения одного острова с «землёй» ground. */

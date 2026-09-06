@@ -234,6 +234,31 @@ describe('solveDc: устойчивость к вырожденным схема
   });
 });
 
+describe('solveDc: узлы выводов для Мультиметра', () => {
+  it('выводы, соединённые Проводом, — один узел: общий остров и общий потенциал', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('b', 1))],
+    );
+    const solution = solveDc(canvas);
+    const plus = solution.pinNodes.get('b:0')!;
+    const resistorPin = solution.pinNodes.get('r:0')!;
+    expect(resistorPin.island).toBe(plus.island);
+    expect(resistorPin.voltage).toBeCloseTo(plus.voltage, 12);
+    // земля — минусовой вывод батареи: 0 В; на «плюсе» — напряжение зажимов
+    expect(solution.pinNodes.get('b:1')!.voltage).toBe(0);
+    expectCloseTo(plus.voltage, readingOf(solution, 'b')!.voltage, 1e-9);
+  });
+
+  it('каждый вывод каждого Компонента имеет узел; несоединённые Компоненты — разные острова', () => {
+    const solution = solveDc(canvasOf([component('b', 'battery'), component('r', 'resistor')], []));
+    expect([...solution.pinNodes.keys()].sort()).toEqual(['b:0', 'b:1', 'r:0', 'r:1']);
+    expect(solution.pinNodes.get('b:0')!.island).not.toBe(solution.pinNodes.get('r:0')!.island);
+    // отдельная батарея без тока: на зажимах вся ЭДС
+    expectCloseTo(solution.pinNodes.get('b:0')!.voltage - solution.pinNodes.get('b:1')!.voltage, 9);
+  });
+});
+
 describe('wireCurrents: оверлей токов Проводов', () => {
   it('последовательная цепь: ток каждого Провода равен току контура', () => {
     const canvas = canvasOf(

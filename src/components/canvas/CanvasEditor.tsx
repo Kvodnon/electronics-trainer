@@ -26,6 +26,7 @@ import { CanvasSelectionPanel } from './CanvasSelectionPanel';
 import { formatQuantity } from '../../domain/quantity';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import type { ComponentReading } from '../../domain/simulator';
+import type { MultimeterMode } from '../../domain/multimeter';
 import type { SymbolStandard } from '../../domain/symbols';
 
 /** Радиус зоны захвата символа Компонента мышью. */
@@ -64,6 +65,23 @@ export interface CanvasOverlay {
   readonly wireCurrents: ReadonlyMap<string, number | null>;
 }
 
+/**
+ * Мультиметр на Холсте: режим измерений (CONTEXT.md). Состояние щупов живёт
+ * выше — в экране Задания; редактору достаются жесты: клик по выводу
+ * прикладывает щуп (напряжение), клик по Компоненту кладёт щупы на его ветвь
+ * (ток), Esc и клик по полю снимают щупы.
+ */
+export interface MultimeterGestures {
+  readonly mode: MultimeterMode;
+  readonly redProbe: PinRef | null;
+  readonly blackProbe: PinRef | null;
+  /** Компонент, на ветвь которого положены щупы в режиме тока. */
+  readonly branchProbe: string | null;
+  readonly onPinProbe: (ref: PinRef) => void;
+  readonly onBranchProbe: (componentId: string) => void;
+  readonly onClearProbes: () => void;
+}
+
 interface CanvasEditorProps {
   readonly palette: readonly ComponentKind[];
   readonly history: CanvasHistory;
@@ -78,9 +96,11 @@ interface CanvasEditorProps {
   readonly overlay?: CanvasOverlay | null;
   /** Подсветка места ошибки из Диагноза. */
   readonly faultSpot?: CircuitDiagnosisSpot | null;
+  /** Мультиметр: режим измерений включён; нет — обычное редактирование. */
+  readonly multimeter?: MultimeterGestures | null;
 }
 
-export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, overlay, faultSpot }: CanvasEditorProps) {
+export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, overlay, faultSpot, multimeter = null }: CanvasEditorProps) {
   const canvas = history.present;
   const [selection, setSelection] = useState<Selection>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -152,7 +172,12 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
   function endDrag() {
     if (drag === null) return;
     const original = componentById.get(drag.componentId);
-    if (original && (original.x !== drag.position.x || original.y !== drag.position.y)) {
+    const movedPosition =
+      original !== undefined && (original.x !== drag.position.x || original.y !== drag.position.y);
+    if (!movedPosition && multimeter !== null && multimeter.mode === 'current') {
+      // клик без сдвига в режиме тока — щупы на ветвь Компонента
+      multimeter.onBranchProbe(drag.componentId);
+    } else if (original !== undefined && movedPosition) {
       onAction({
         type: 'component-moved',
         componentId: drag.componentId,
@@ -167,6 +192,13 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
     event.stopPropagation();
     const component = componentById.get(ref.componentId);
     if (component === undefined) return;
+    if (multimeter !== null) {
+      // режим измерений: вывод — точка измерения, а не начало Провода
+      setWireDraft(null);
+      if (multimeter.mode === 'voltage') multimeter.onPinProbe(ref);
+      else multimeter.onBranchProbe(ref.componentId);
+      return;
+    }
     if (wireDraft === null) {
       const origin = pinPointOf(component, ref.pin);
       setSelection(null);
@@ -180,6 +212,7 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
   function clearCanvasInteraction() {
     setSelection(null);
     setWireDraft(null);
+    multimeter?.onClearProbes();
   }
 
   function removeSelection() {
@@ -203,6 +236,7 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
     if (event.key === 'Escape') {
       setWireDraft(null);
       setSelection(null);
+      multimeter?.onClearProbes();
       return;
     }
     if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -236,6 +270,25 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
     const index = components.findIndex((c) => c.id === id) + 1;
     return `${componentTitles[component.kind]} ${index}`.trim();
   };
+
+  /** Щупы Мультиметра для отрисовки: точка измерения и цвет. В режиме тока —
+   * оба конца ветви выбранного Компонента. */
+  const probeMarkers: readonly { readonly ref: PinRef; readonly tone: 'red' | 'black' }[] =
+    multimeter === null
+      ? []
+      : multimeter.mode === 'voltage'
+        ? [
+            ...(multimeter.redProbe !== null ? [{ ref: multimeter.redProbe, tone: 'red' as const }] : []),
+            ...(multimeter.blackProbe !== null
+              ? [{ ref: multimeter.blackProbe, tone: 'black' as const }]
+              : []),
+          ]
+        : multimeter.branchProbe !== null
+          ? [
+              { ref: { componentId: multimeter.branchProbe, pin: 0 }, tone: 'red' as const },
+              { ref: { componentId: multimeter.branchProbe, pin: 1 }, tone: 'black' as const },
+            ]
+          : [];
 
   return (
     <div
@@ -293,9 +346,13 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
         </button>
         {actions}
         <span className="canvas-toolbar-hint">
-          {wireDraft !== null
-            ? 'Проведите Провод до второго вывода; Esc — отменить'
-            : 'Клик по выводу — тянуть Провод; перетаскивание — перемещение'}
+          {multimeter !== null
+            ? multimeter.mode === 'voltage'
+              ? 'Клик по выводу — приложить щуп (красный, затем чёрный); Esc — снять щупы'
+              : 'Клик по Компоненту или его выводу — щупы на ветвь; Esc — снять щупы'
+            : wireDraft !== null
+              ? 'Проведите Провод до второго вывода; Esc — отменить'
+              : 'Клик по выводу — тянуть Провод; перетаскивание — перемещение'}
         </span>
       </div>
 
@@ -426,6 +483,22 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
               </text>
             );
           })}
+
+        {probeMarkers.map(({ ref, tone }) => {
+          const component = componentById.get(ref.componentId);
+          if (component === undefined) return null;
+          const point = pinPointOf(withDrag(component), ref.pin);
+          return (
+            <circle
+              key={`multimeter-probe-${tone}`}
+              className={`multimeter-probe multimeter-probe-${tone}`}
+              cx={point.x}
+              cy={point.y}
+              r={10}
+              aria-hidden="true"
+            />
+          );
+        })}
 
         {components.map((component) =>
           [0, 1].map((pin) => {

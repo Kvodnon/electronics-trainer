@@ -563,6 +563,134 @@ describe('Оверлей токов и напряжений', () => {
   });
 });
 
+describe('Мультиметр', () => {
+  /** Чекбокс режима измерений, выбор режима и табло Мультиметра. */
+  const multimeterToggle = () => screen.getByRole('checkbox', { name: 'Мультиметр' });
+  const modeSelect = () => screen.getByRole('combobox', { name: 'Режим мультиметра' });
+  const display = () => document.querySelector('.multimeter-display')!;
+
+  /** Контур батарея — выключатель — лампочка; выключатель остаётся разомкнутым. */
+  async function assembleSwitchedLoop(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+  }
+
+  it('включается, щупы к двум точкам — видно напряжение из расчёта', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await assembleLoop(user, 'Лампочка 2');
+
+    // выключен — табло нет; включается — появляются режим и табло без показания
+    expect(multimeterToggle()).not.toBeChecked();
+    await user.click(multimeterToggle());
+    expect(display().textContent).toBe('—');
+
+    // красный щуп на «плюсе» батареи, чёрный на земле (вывод лампочки)
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    expect(display().textContent).toBe('—');
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    expect(display().textContent).toBe('8,99 В');
+  });
+
+  it('щупы снимаются Esc и прикладываются заново: перестановка меняет знак', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await assembleLoop(user, 'Лампочка 2');
+    await user.click(multimeterToggle());
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    expect(display().textContent).toBe('8,99 В');
+
+    await user.keyboard('{Escape}');
+    expect(display().textContent).toBe('—');
+
+    // теперь красный на земле, чёрный на «плюсе»
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    expect(display().textContent).toBe('-8,99 В');
+  });
+
+  it('ток ветви обновляется после переключения выключателя, без перезапуска режима', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await assembleSwitchedLoop(user);
+    // замыкаем выключатель через панель правки
+    await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+
+    await user.click(multimeterToggle());
+    await user.selectOptions(modeSelect(), 'current');
+    // клик по Компоненту — щупы на его ветви: ток контура
+    await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
+    expect(display().textContent).toBe('74,9 мА');
+
+    // размыкание — честное «нет тока»; замыкание — ток возвращается; режим не трогали
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    expect(display().textContent).toBe('0 А');
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    expect(display().textContent).toBe('74,9 мА');
+  });
+
+  it('щупы без общей цепи — измерение невозможно: «—»', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(multimeterToggle());
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    expect(display().textContent).toBe('—');
+  });
+
+  it('в режиме измерений клик по выводу прикладывает щуп, а не тянет Провод; после выключения Холст редактируется как прежде', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+
+    await user.click(multimeterToggle());
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    expect(document.querySelector('.canvas-pin-source')).toBeNull();
+    expect(document.querySelector('.multimeter-probe-red')).not.toBeNull();
+
+    await user.click(multimeterToggle());
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    expect(screen.getByRole('button', { name: 'Провод w1' })).toBeInTheDocument();
+  });
+
+  it('щупы рисуются на Холсте: кольца на точках измерения', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await assembleLoop(user, 'Лампочка 2');
+    await user.click(multimeterToggle());
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    expect(document.querySelectorAll('.multimeter-probe-red')).toHaveLength(1);
+    expect(document.querySelectorAll('.multimeter-probe-black')).toHaveLength(1);
+
+    // режим тока — щупы обеих ветвей Компонента
+    await user.selectOptions(modeSelect(), 'current');
+    await user.click(screen.getByRole('button', { name: 'Лампочка 2' }));
+    expect(document.querySelectorAll('.multimeter-probe-red')).toHaveLength(1);
+    expect(document.querySelectorAll('.multimeter-probe-black')).toHaveLength(1);
+    expect(display().textContent).toBe('74,9 мА');
+  });
+});
+
 describe('Стандарт обозначений', () => {
   const standardSelect = () => screen.getByRole('combobox', { name: 'Обозначения' });
 
