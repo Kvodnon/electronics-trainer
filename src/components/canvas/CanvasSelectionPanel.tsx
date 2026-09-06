@@ -90,13 +90,25 @@ function ComponentValueForm({
     );
   }
 
-  /** Числовой номинал: поле Компонента, его единица и текущее значение. */
+  /** Числовой номинал: поле Компонента → единица, текущее значение и правка. */
   const NUMERIC_FIELDS = {
-    voltage: { unit: 'В' as QuantityUnit, value: component.voltage },
-    resistance: { unit: 'Ом' as QuantityUnit, value: component.resistance },
-    capacitance: { unit: 'Ф' as QuantityUnit, value: component.capacitance },
+    voltage: {
+      unit: 'В' as QuantityUnit,
+      value: component.voltage,
+      patch: (parsed: number): ComponentValuePatch => ({ voltage: parsed }),
+    },
+    resistance: {
+      unit: 'Ом' as QuantityUnit,
+      value: component.resistance,
+      patch: (parsed: number): ComponentValuePatch => ({ resistance: parsed }),
+    },
+    capacitance: {
+      unit: 'Ф' as QuantityUnit,
+      value: component.capacitance,
+      patch: (parsed: number): ComponentValuePatch => ({ capacitance: parsed }),
+    },
   };
-  const { unit, value } = NUMERIC_FIELDS[field];
+  const { unit, value, patch } = NUMERIC_FIELDS[field];
   const [raw, setRaw] = useState(String(value ?? '').replace('.', ','));
   const [error, setError] = useState<string | null>(null);
 
@@ -107,13 +119,7 @@ function ComponentValueForm({
       return;
     }
     setError(null);
-    onApply(
-      field === 'voltage'
-        ? { voltage: parsed.value }
-        : field === 'resistance'
-          ? { resistance: parsed.value }
-          : { capacitance: parsed.value },
-    );
+    onApply(patch(parsed.value));
   }
 
   return (

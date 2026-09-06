@@ -14,11 +14,6 @@ import { formatQuantity } from '../../domain/quantity';
 /** Сколько реальных секунд длится проигрывание плана независимо от его длины. */
 const PLAYBACK_SECONDS = 3.6;
 
-/** Секунды между двумя отметками производительности; callback получает now. */
-function elapsedSeconds(now: number, start: number): number {
-  return (now - start) / 1000;
-}
-
 /** Габариты графика: поле рисунка и отступы под оси. */
 const VIEW = { width: 640, height: 260, left: 56, right: 16, top: 14, bottom: 36 };
 const PLOT_WIDTH = VIEW.width - VIEW.left - VIEW.right;
@@ -48,27 +43,19 @@ export function useTransientPlayback(transient: TransientSolution | null): Trans
     if (!playing || transient === null) return;
     const end = transient.times[transient.times.length - 1];
     let start: number | null = null;
-    const schedule =
-      typeof requestAnimationFrame === 'function'
-        ? requestAnimationFrame
-        : (tick: (now: number) => void) => setTimeout(() => tick(Date.now()), 16);
-    const cancel =
-      typeof cancelAnimationFrame === 'function'
-        ? cancelAnimationFrame
-        : (id: number) => clearTimeout(id);
     const tick = (now: number) => {
       if (start === null) start = now;
-      const moment = Math.min(end, (elapsedSeconds(now, start) / PLAYBACK_SECONDS) * end);
+      const moment = Math.min(end, ((now - start) / 1000 / PLAYBACK_SECONDS) * end);
       setTime(moment);
       if (moment >= end) {
         setPlaying(false);
         return;
       }
-      frameRef.current = schedule(tick);
+      frameRef.current = requestAnimationFrame(tick);
     };
-    frameRef.current = schedule(tick);
+    frameRef.current = requestAnimationFrame(tick);
     return () => {
-      if (frameRef.current !== null) cancel(frameRef.current);
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
       frameRef.current = null;
     };
   }, [playing, transient]);
@@ -110,6 +97,8 @@ export function OscilloscopePanel({ plan, transient, playback }: OscilloscopePan
   const y = (v: number) => VIEW.top + PLOT_HEIGHT - (v / voltagePeak) * PLOT_HEIGHT;
 
   const curves = [...transient.capacitorVoltages.entries()];
+  // бегунок и показание ведут первый конденсатор Холста: цепи М2 собираются
+  // вокруг одного конденсатора, кривых большего числа он не смешивает
   const firstCapacitor = curves[0];
   const playhead =
     playback.time === null || firstCapacitor === undefined

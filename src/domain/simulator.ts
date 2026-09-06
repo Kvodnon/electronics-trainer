@@ -14,7 +14,7 @@
  * Нелинейные модели М2: диод и светодиод — кусочно-линейные с прямым порогом.
  * Проводящее состояние — ЭДС порога с малым последовательным сопротивлением
  * (эквивалент Нортона, как у батареи); запертое — обрыв. Состояние каждого
- * диода угадывается итеративно: схема решается, состояния поправруются, пока
+ * диода угадывается итеративно: схема решается, состояния корректируются, пока
  * не перестанут меняться.
  *
  * Конденсатор (тикет 14): для постоянного тока — разрыв, поэтому в обычном
@@ -95,6 +95,11 @@ export interface DcSolveOptions {
 const THEVENIN_PROBE_CURRENT = 1;
 /** Напряжение на конденсаторе-компаньоне, ниже которого остров не «живой». */
 const ENERGIZED_VOLTAGE = 1e-9;
+
+/** Сопротивление компаньона конденсатора на шаге интегрирования, Ом (Δt/2C). */
+function companionResistance(timeStep: number, capacitance: number): number {
+  return timeStep / (2 * capacitance);
+}
 
 /**
  * Показание Симулятора для одного Компонента. Знаки: напряжение — вывод 0
@@ -505,7 +510,7 @@ function solveWithDiodeStates(
           // в пробе постоянной времени ведут себя как короткие — напряжение на
           // них не может измениться мгновенно.
           const capacitance = branch.component.capacitance ?? defaultCapacitance;
-          const resistance = (options.timeStep ?? 0) / (2 * capacitance);
+          const resistance = companionResistance(options.timeStep ?? 0, capacitance);
           if (Number.isFinite(resistance) && resistance > 0) {
             stampNorton(branch, resistance, state.voltage + state.current * resistance);
           }
@@ -578,8 +583,7 @@ function readingOfBranch(
     // компаньон переходного режима: ток восстанавливается по его уравнению,
     // i = (v − v_пред)/r − i_пред; обычное решение — обрыв, ток нулевой
     const state = options.capacitorStates?.get(component.id);
-    const capacitance = component.capacitance ?? defaultCapacitance;
-    const resistance = (options.timeStep ?? 0) / (2 * capacitance);
+    const resistance = companionResistance(options.timeStep ?? 0, component.capacitance ?? defaultCapacitance);
     const current =
       state !== undefined && resistance > 0
         ? (voltage - state.voltage) / resistance - state.current

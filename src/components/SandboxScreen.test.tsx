@@ -84,6 +84,54 @@ describe('Свободный режим без проверки', () => {
   });
 });
 
+describe('Осциллограф в Песочнице (тикет 14)', () => {
+  /** Палитра с конденсатором: осциллограф появляется вместе с ним. */
+  function renderSandboxWithCapacitor() {
+    function Harness() {
+      const [standard, setStandard] = useState<SymbolStandard>('gost');
+      return (
+        <SandboxScreen
+          palette={[...modulePaletteOf(module1), 'capacitor' as const]}
+          circuits={[]}
+          onSaveCircuit={() => undefined}
+          onDeleteCircuit={() => undefined}
+          symbolStandard={standard}
+          onSymbolStandardChange={setStandard}
+          onExit={() => undefined}
+        />
+      );
+    }
+    return render(<Harness />);
+  }
+
+  it('осциллограф строится сам: ключ переключается на середине проигрывания', async () => {
+    const user = userEvent.setup();
+    renderSandboxWithCapacitor();
+
+    // пустая схема: панель есть, кривой нет — нечего измерять
+    expect(screen.getByText('Осциллограф')).toBeInTheDocument();
+    expect(document.querySelector('polyline.scope-curve')).toBeNull();
+
+    // зарядная цепь с разомкнутым выключателем: он сам замкнётся на середине
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Конденсатор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Конденсатор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+
+    expect(document.querySelectorAll('polyline.scope-curve')).toHaveLength(1);
+    expect(document.querySelector('.scope-toggle-mark')).not.toBeNull();
+
+    // проигрывание ведёт бегунок по кривой заряда
+    await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
+    expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
+  });
+});
+
 describe('Мои схемы: сохранение, загрузка, удаление', () => {
   /** Собирает контур, поворачивает лампочку и сохраняет схему под именем. */
   async function saveRingCircuit(user: ReturnType<typeof userEvent.setup>, name: string) {

@@ -1,10 +1,13 @@
-import { useReducer, useState } from 'react';
+import { useReducer, useMemo, useState } from 'react';
 import { canvasReducer, emptyHistory, type CanvasState, type ComponentKind } from '../domain/canvas';
 import { isValidCircuitName, type SavedCircuit } from '../domain/sandbox';
+import { solveTransient, type TransientSolution } from '../domain/transient';
+import type { TransientPlan } from '../domain/task';
 import type { SymbolStandard } from '../domain/symbols';
 import { CanvasEditor } from './canvas/CanvasEditor';
 import { useLiveCircuit, useMultimeter } from './canvas/liveCircuit';
 import { MultimeterControls, StandardControls } from './canvas/ToolbarControls';
+import { OscilloscopePanel, useTransientPlayback } from './canvas/OscilloscopePanel';
 
 interface SandboxScreenProps {
   /** Палитра Песочницы: Компоненты, открытые текущим Прогрессом Курса. */
@@ -23,8 +26,14 @@ interface SandboxScreenProps {
  * Холста, что у Схема-задания — живое поведение, Мультиметр, переключатель
  * стандарта, — но без «Проверить», оверлея и вердиктов: Симулятор считается
  * на каждое изменение схемы сам по себе. Рядом — «Мои схемы»: сохранение
- * под именем, загрузка и удаление.
+ * под именем, загрузка и удаление. Для схем с конденсатором — Осциллограф:
+ * переходный режим по фиксированному плану, коммутаторы переключаются
+ * на середине проигрывания (замкнутый размыкается — разряд через резистор,
+ * разомкнутый замыкается — заряд).
  */
+
+/** План переходного режима Песочницы: 5 секунд с переключением на середине. */
+const SANDBOX_TRANSIENT_PLAN: TransientPlan = { duration: 5, switchToggleTime: 2.5 };
 export function SandboxScreen({
   palette,
   circuits,
@@ -38,6 +47,16 @@ export function SandboxScreen({
   const { solution, readings: liveReadings } = useLiveCircuit(history);
   const multimeter = useMultimeter(solution);
   const [name, setName] = useState('');
+
+  /** Переходный режим песочницы: считается на каждое изменение схемы. */
+  const transient = useMemo<TransientSolution | null>(() => {
+    try {
+      return solveTransient(history.present, SANDBOX_TRANSIENT_PLAN);
+    } catch {
+      return null;
+    }
+  }, [history.present]);
+  const playback = useTransientPlayback(transient);
 
   function loadCircuit(circuit: SavedCircuit) {
     onAction({ type: 'canvas-loaded', canvas: circuit.canvas });
@@ -63,6 +82,7 @@ export function SandboxScreen({
         <p className="sandbox-intro">
           Собирайте что угодно из Компонентов, открытых Курсом: схема живёт сразу —
           Симулятор пересчитывает её на каждое изменение, Мультиметр измеряет в любой момент.
+          Для схем с конденсатором осциллограф проигрывает заряд и разряд во времени.
         </p>
         <CanvasEditor
           palette={palette}
@@ -70,6 +90,7 @@ export function SandboxScreen({
           onAction={onAction}
           symbolStandard={symbolStandard}
           liveReadings={liveReadings}
+          capacitorFill={playback.fillLevels}
           multimeter={multimeter.gestures}
           actions={
             <>
@@ -84,6 +105,9 @@ export function SandboxScreen({
             </>
           }
         />
+        {transient !== null && (
+          <OscilloscopePanel plan={SANDBOX_TRANSIENT_PLAN} transient={transient} playback={playback} />
+        )}
       </section>
 
       <SandboxCircuits

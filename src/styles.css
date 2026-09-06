@@ -1438,7 +1438,7 @@ body {
 }
 
 .scope-grid-line {
-  stroke: #223047;
+  stroke: var(--border-strong);
   stroke-width: 1;
 }
 

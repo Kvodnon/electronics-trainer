@@ -10,7 +10,7 @@
  * Чистый TypeScript без DOM.
  */
 import { defaultCapacitance, type CanvasState, type PlacedComponent } from './canvas';
-import { solveDc, type CapacitorState, type DcSolution } from './simulator';
+import { readingOf, solveDc, type CapacitorState, type DcSolution } from './simulator';
 import type { TransientPlan } from './task';
 
 /**
@@ -120,15 +120,10 @@ export function solveTransient(canvas: CanvasState, plan: TransientPlan): Transi
 }
 
 /**
- * Начальные состояния: конденсаторы незаряжены, а их начальные токи —
- * из «нулевого» решения (при нулевом напряжении и почти нулевом
- * сопротивлении компаньона ток совпадает с настоящим начальным током).
- */
-/**
  * Начальные состояния: конденсаторы незаряжены, а их начальные токи — из
  * «нулевого» решения: при нулевом напряжении и почти нулевом сопротивлении
  * компаньона его ток совпадает с настоящим током схемы. Трапеции нужен
- * верный i₀ — с нулевым первый шаг теряет ползаряда, и кривая съезжает.
+ * верный i₀ — с обнулённым первый шаг теряет ползаряда, и кривая съезжает.
  * Тем же приёмом токи пересеиваются после переключения коммутаторов:
  * скачок тока через конденсатор обязан дойти до интегратора.
  */
@@ -146,9 +141,9 @@ function reseededStates(
       timeStep: INITIAL_STEP_SECONDS,
     });
     for (const capacitor of capacitors) {
-      const reading = probe.readings.find((candidate) => candidate.componentId === capacitor.id);
+      const reading = readingOf(probe, capacitor.id);
       const before = states.get(capacitor.id);
-      if (reading === undefined || before === undefined) continue;
+      if (reading === null || before === undefined) continue;
       // напряжение держится прежним (компаньон почти замыкает накоротко),
       // а ток подставляется тот, который новая топология требует
       seeded.set(capacitor.id, { voltage: before.voltage, current: reading.current });
@@ -191,8 +186,8 @@ function nextStates(
   for (const capacitor of capacitors) {
     const before = previous.get(capacitor.id);
     if (before === undefined) continue;
-    const reading = solution.readings.find((candidate) => candidate.componentId === capacitor.id);
-    if (reading === undefined) {
+    const reading = readingOf(solution, capacitor.id);
+    if (reading === null) {
       next.set(capacitor.id, before);
       continue;
     }
@@ -223,7 +218,7 @@ function timeConstantOf(
       ),
       timeStep: INITIAL_STEP_SECONDS,
     });
-    const reading = probe.readings.find((candidate) => candidate.componentId === capacitor.id);
+    const reading = readingOf(probe, capacitor.id);
     const resistance = Math.abs(reading?.voltage ?? 0);
     if (resistance >= NO_PATH_RESISTANCE) return Number.POSITIVE_INFINITY;
     const tau = resistance * (capacitor.capacitance ?? defaultCapacitance);
