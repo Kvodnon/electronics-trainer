@@ -26,6 +26,7 @@ import { CanvasSelectionPanel } from './CanvasSelectionPanel';
 import { formatQuantity } from '../../domain/quantity';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import type { ComponentReading } from '../../domain/simulator';
+import type { SymbolStandard } from '../../domain/symbols';
 
 /** Радиус зоны захвата символа Компонента мышью. */
 const COMPONENT_HIT_RADIUS = 34;
@@ -67,6 +68,8 @@ interface CanvasEditorProps {
   readonly palette: readonly ComponentKind[];
   readonly history: CanvasHistory;
   readonly onAction: (action: CanvasAction) => void;
+  /** Стандарт условных обозначений: символы Палитры и Холста перерисовываются мгновенно. */
+  readonly symbolStandard: SymbolStandard;
   /** Кнопки Задания в панели редактора — например, «Проверить». */
   readonly actions?: ReactNode;
   /** Живые показания Симулятора: лампочка светится, моторчик вращается. */
@@ -77,7 +80,7 @@ interface CanvasEditorProps {
   readonly faultSpot?: CircuitDiagnosisSpot | null;
 }
 
-export function CanvasEditor({ palette, history, onAction, actions, liveReadings, overlay, faultSpot }: CanvasEditorProps) {
+export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, overlay, faultSpot }: CanvasEditorProps) {
   const canvas = history.present;
   const [selection, setSelection] = useState<Selection>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -254,7 +257,7 @@ export function CanvasEditor({ palette, history, onAction, actions, liveReadings
             onClick={() => placeFromPalette(kind)}
             title={`Поставить: ${componentTitles[kind]}`}
           >
-            <PaletteSymbol kind={kind} />
+            <PaletteSymbol kind={kind} standard={symbolStandard} />
             <span className="palette-item-name">{componentTitles[kind]}</span>
           </button>
         ))}
@@ -383,7 +386,7 @@ export function CanvasEditor({ palette, history, onAction, actions, liveReadings
             >
               <circle className="canvas-component-hit" r={COMPONENT_HIT_RADIUS} />
               <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <CanvasSymbolBody component={component} reading={liveReadings?.get(component.id)} />
+                <CanvasSymbolBody component={component} reading={liveReadings?.get(component.id)} standard={symbolStandard} />
               </g>
               {fault && <circle className="fault-ring" r={46} aria-hidden="true" />}
             </g>

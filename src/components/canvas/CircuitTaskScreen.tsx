@@ -1,6 +1,8 @@
 import { useReducer, useMemo, useState } from 'react';
 import type { CircuitTask } from '../../domain/task';
 import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canvas';
+import type { SymbolStandard } from '../../domain/symbols';
+import { symbolStandards } from '../../domain/symbols';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import {
@@ -10,12 +12,16 @@ import {
   type ComponentReading,
 } from '../../domain/simulator';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
+import { standardTitles } from './CanvasSymbols';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
   readonly evaluation: CircuitTaskEvaluation | null;
   readonly onAnswer: (answer: CircuitAnswer) => void;
   readonly onNext: () => void;
+  /** Стандарт обозначений: живёт выше экрана, сохраняется между сессиями. */
+  readonly symbolStandard: SymbolStandard;
+  readonly onSymbolStandardChange: (standard: SymbolStandard) => void;
 }
 
 /**
@@ -26,8 +32,17 @@ interface CircuitTaskScreenProps {
  * чтобы не врать устаревшими числами. Живое поведение (свечение лампочки,
  * вращение моторчика) считается по текущей схеме на каждое её изменение;
  * числовой оверлей и подсветка места ошибки — только по вердикту.
+ * Стандарт обозначений приходит снаружи: переключатель меняет только
+ * отрисовку, собранная схема остаётся как была.
  */
-export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: CircuitTaskScreenProps) {
+export function CircuitTaskScreen({
+  task,
+  evaluation,
+  onAnswer,
+  onNext,
+  symbolStandard,
+  onSymbolStandardChange,
+}: CircuitTaskScreenProps) {
   const [history, onAction] = useReducer(canvasReducer, emptyHistory);
   /** Схема на момент последней «Проверить» — для снятия устаревшего вердикта. */
   const [submitted, setSubmitted] = useState<CanvasState | null>(null);
@@ -72,6 +87,7 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
         palette={task.palette}
         history={history}
         onAction={onAction}
+        symbolStandard={symbolStandard}
         liveReadings={liveReadings}
         overlay={overlay}
         faultSpot={faultSpot}
@@ -85,6 +101,22 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
                 onChange={(event) => setShowReadings(event.target.checked)}
               />
               Токи и напряжения
+            </label>
+            <label className="standard-toggle">
+              Обозначения
+              <select
+                className="standard-select"
+                value={symbolStandard}
+                onChange={(event) =>
+                  onSymbolStandardChange(event.target.value as SymbolStandard)
+                }
+              >
+                {symbolStandards.map((standard) => (
+                  <option key={standard} value={standard}>
+                    {standardTitles[standard]}
+                  </option>
+                ))}
+              </select>
             </label>
             <button type="button" className="button-primary canvas-check" onClick={check}>
               Проверить

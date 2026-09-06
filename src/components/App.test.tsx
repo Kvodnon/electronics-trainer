@@ -157,3 +157,41 @@ describe('Схема-задание в потоке Курса', () => {
     expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
   });
 });
+
+describe('Стандарт обозначений между сессиями', () => {
+  it('выбор ANSI в Задании сохраняется, переживает перезагрузку и применяется к следующему Заданию', async () => {
+    // М1 закрыта заранее — сразу к Схема-заданию М2
+    window.localStorage.setItem(
+      'electronics-trainer.progress.v1',
+      JSON.stringify({ taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'passed' } }),
+    );
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    // М2: Теория → Вопрос → Схема-задание
+    await user.click(screen.getByRole('button', { name: 'Начать' }));
+    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+
+    // по умолчанию ГОСТ: батарея в Палитре — пластины, без круга
+    const batterySymbol = () =>
+      screen.getByRole('button', { name: 'Батарея' }).querySelector('svg.palette-symbol')!;
+    expect(batterySymbol().querySelector('circle')).toBeNull();
+
+    // переключение на ANSI — мгновенно, перерисовка прямо в Задании
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Обозначения' }), 'ansi');
+    expect(batterySymbol().querySelector('circle')).not.toBeNull();
+    expect(window.localStorage.getItem('electronics-trainer.symbol-standard.v1')).toBe('ansi');
+
+    // «перезагрузка страницы»
+    firstRender.unmount();
+    render(<App />);
+
+    // выбор стандарта применяется к следующему Заданию без переключателя
+    await user.click(screen.getByRole('button', { name: 'Продолжить' }));
+    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    expect(screen.getByRole('combobox', { name: 'Обозначения' })).toHaveValue('ansi');
+    expect(batterySymbol().querySelector('circle')).not.toBeNull();
+  });
+});

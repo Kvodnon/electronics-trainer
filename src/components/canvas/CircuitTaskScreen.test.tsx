@@ -3,6 +3,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CircuitTask } from '../../domain/task';
+import type { SymbolStandard } from '../../domain/symbols';
 import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
@@ -23,15 +24,22 @@ const demoTask: CircuitTask = {
 };
 
 /** Рендер только редактора: проверка не участвовала, вердикта нет. */
-function renderTask(task: CircuitTask = demoTask) {
-  return render(
-    <CircuitTaskScreen
-      task={task}
-      evaluation={null}
-      onAnswer={() => undefined}
-      onNext={() => undefined}
-    />,
-  );
+function renderTask(task: CircuitTask = demoTask, initialStandard: SymbolStandard = 'gost') {
+  /** Обвязка как в ModuleScreen: стандарт обозначений живёт выше экрана Задания. */
+  function Harness() {
+    const [standard, setStandard] = useState(initialStandard);
+    return (
+      <CircuitTaskScreen
+        task={task}
+        evaluation={null}
+        onAnswer={() => undefined}
+        onNext={() => undefined}
+        symbolStandard={standard}
+        onSymbolStandardChange={setStandard}
+      />
+    );
+  }
+  return render(<Harness />);
 }
 
 /** jsdom не считает layout: сообщаем Холсту его реальный размер (viewBox 800×560). */
@@ -313,6 +321,7 @@ function renderCheckableTask(task: CircuitTask) {
   const onNext = vi.fn();
   function Harness() {
     const [answer, setAnswer] = useState<Answer | null>(null);
+    const [standard, setStandard] = useState<SymbolStandard>('gost');
     const evaluation = answer !== null ? evaluate(task, answer) : null;
     return (
       <CircuitTaskScreen
@@ -320,6 +329,8 @@ function renderCheckableTask(task: CircuitTask) {
         evaluation={evaluationOfKind(evaluation, 'circuit-task')}
         onAnswer={setAnswer}
         onNext={onNext}
+        symbolStandard={standard}
+        onSymbolStandardChange={setStandard}
       />
     );
   }
@@ -549,6 +560,109 @@ describe('Оверлей токов и напряжений', () => {
 
     await user.click(toggle);
     expect(document.querySelector('text.canvas-wire-reading')).toBeNull();
+  });
+});
+
+describe('Стандарт обозначений', () => {
+  const standardSelect = () => screen.getByRole('combobox', { name: 'Обозначения' });
+
+  /** В группе Компонента есть наклонный сегмент (зигзаг ANSI или плечо). */
+  const hasSlantedPath = (group: Element) =>
+    [...group.querySelectorAll('path')].some((p) => (p.getAttribute('d') ?? '').includes('L'));
+
+  it('по умолчанию ГОСТ; выбор ANSI мгновенно перерисовывает Палитру и Холст', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+
+    const canvasResistor = screen.getByRole('button', { name: 'Резистор 1' });
+    // ГОСТ: резистор — прямоугольник, в Палитре и на Холсте
+    expect(canvasResistor.querySelector('rect')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Резистор' }).querySelector('svg.palette-symbol rect')).not.toBeNull();
+
+    await user.selectOptions(standardSelect(), 'ansi');
+
+    // ANSI: прямоугольник сменён зигзагом — без перезагрузки и правки схемы
+    expect(canvasResistor.querySelector('rect')).toBeNull();
+    expect(hasSlantedPath(canvasResistor)).toBe(true);
+    const paletteResistor = screen.getByRole('button', { name: 'Резистор' });
+    expect(paletteResistor.querySelector('svg.palette-symbol rect')).toBeNull();
+    expect(hasSlantedPath(paletteResistor.querySelector('svg.palette-symbol')!)).toBe(true);
+
+    // и обратно
+    await user.selectOptions(standardSelect(), 'gost');
+    expect(canvasResistor.querySelector('rect')).not.toBeNull();
+  });
+
+  it('в ANSI у каждого Компонента Палитры М1 — свой символ; батарея ANSI — круг с «+/−»', async () => {
+    const user = userEvent.setup();
+    renderTask();
+
+    await user.selectOptions(standardSelect(), 'ansi');
+
+    for (const name of ['Батарея', 'Резистор', 'Лампочка', 'Выключатель', 'Ключ', 'Моторчик']) {
+      const symbol = screen.getByRole('button', { name }).querySelector('svg.palette-symbol');
+      expect(symbol).not.toBeNull();
+      expect(symbol!.querySelector('path, rect, circle')).not.toBeNull();
+    }
+    // батарея ANSI — круг с знаками; у батареи ГОСТ круга нет
+    const batterySymbol = screen.getByRole('button', { name: 'Батарея' }).querySelector('svg.palette-symbol')!;
+    expect(batterySymbol.querySelector('circle')).not.toBeNull();
+    expect(batterySymbol.textContent).toContain('+');
+    expect(batterySymbol.textContent).toContain('−');
+  });
+
+  it('переключение не сбрасывает работу: состояние Холста идентично до и после', async () => {
+    const user = userEvent.setup();
+    const { container } = renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 2' }));
+    // замкнутый выключатель — состояние Компонента тоже не должно сброситься
+    await user.click(screen.getByRole('button', { name: 'Выключатель 3' }));
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    expect(screen.getByText('замкнут', { selector: 'text.canvas-label' })).toBeInTheDocument();
+
+    // всё, что определяет собранную работу: позиции и повороты, Провода,
+    // номиналы, состояние коммутаторов, выводы (сами символы меняются —
+    // это и есть переключение, в снимок они не входят)
+    const stateSnapshot = () =>
+      JSON.stringify({
+        components: [...container.querySelectorAll('g.canvas-component')].map((g) => g.getAttribute('transform')),
+        wires: [...container.querySelectorAll('polyline.wire-line')].map((p) => p.getAttribute('points')),
+        labels: [...container.querySelectorAll('text.canvas-label')].map((t) => t.textContent),
+        pins: [...container.querySelectorAll('circle.canvas-pin')].map(
+          (c) => `${c.getAttribute('cx')},${c.getAttribute('cy')}`,
+        ),
+      });
+    const before = stateSnapshot();
+
+    await user.selectOptions(standardSelect(), 'ansi');
+    expect(stateSnapshot()).toBe(before);
+
+    await user.selectOptions(standardSelect(), 'gost');
+    expect(stateSnapshot()).toBe(before);
+  });
+
+  it('живое поведение не зависит от стандарта: лампочка светится и в ANSI', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await assembleLoop(user, 'Лампочка 2');
+
+    await user.selectOptions(standardSelect(), 'ansi');
+
+    const glow = document.querySelector('.symbol-lamp-glow');
+    expect(glow).not.toBeNull();
+    // 9 В на 120 Ом — полный накал, как и в ГОСТ
+    expect(glow!.getAttribute('opacity')).toBe('1');
   });
 });
 

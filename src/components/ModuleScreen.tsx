@@ -8,10 +8,14 @@ import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import { moduleProgressOf, moduleTaskQueue, taskStateOf } from '../domain/course';
 import type { Answer } from '../domain/evaluate';
 import type { CourseAction, CourseModule, CourseProgress, TheoryCard } from '../domain/course';
+import type { SymbolStandard } from '../domain/symbols';
 
 interface ModuleScreenProps {
   module: CourseModule;
   progress: CourseProgress;
+  /** Стандарт обозначений Схема-заданий: живёт в App, сохраняется между сессиями. */
+  symbolStandard: SymbolStandard;
+  onSymbolStandardChange: (standard: SymbolStandard) => void;
   onProgressAction: (action: CourseAction) => void;
   onExit: () => void;
 }
@@ -24,6 +28,8 @@ interface ModuleScreenProps {
 export function ModuleScreen({
   module,
   progress,
+  symbolStandard,
+  onSymbolStandardChange,
   onProgressAction,
   onExit,
 }: ModuleScreenProps) {
@@ -104,6 +110,8 @@ export function ModuleScreen({
             evaluation={evaluationOfKind(evaluation, 'circuit-task')}
             onAnswer={setAnswer}
             onNext={goNext}
+            symbolStandard={symbolStandard}
+            onSymbolStandardChange={onSymbolStandardChange}
           />
         )
       ) : (
