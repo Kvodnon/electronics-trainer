@@ -6,6 +6,7 @@ import type { CourseProgress } from '../domain/course';
 
 const progress: CourseProgress = {
   taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'returned-for-retry' },
+  failedOnce: { 'm1-ohm-02': true },
 };
 
 describe('Сохранение Прогресса между сессиями', () => {
@@ -24,8 +25,25 @@ describe('Сохранение Прогресса между сессиями', 
 
   it('новое сохранение затирает предыдущее', () => {
     saveProgress(progress);
-    saveProgress({ taskStates: {} });
-    expect(loadProgress()).toEqual({ taskStates: {} });
+    saveProgress({ taskStates: {}, failedOnce: {} });
+    expect(loadProgress()).toEqual({ taskStates: {}, failedOnce: {} });
+  });
+
+  it('сохранение прошлой версии без failedOnce — читается, попытки считаются чистыми', () => {
+    // Прогресс, записанный тикетом 03: статы «с первой попытки» ещё не было
+    window.localStorage.setItem(
+      'electronics-trainer.progress.v1',
+      JSON.stringify({ taskStates: { 'm1-ohm-01': 'passed' } }),
+    );
+    expect(loadProgress()).toEqual({ taskStates: { 'm1-ohm-01': 'passed' }, failedOnce: {} });
+  });
+
+  it('битая запись failedOnce — Прогресс отброшен целиком', () => {
+    window.localStorage.setItem(
+      'electronics-trainer.progress.v1',
+      JSON.stringify({ taskStates: {}, failedOnce: { 'm1-ohm-01': 'да' } }),
+    );
+    expect(loadProgress()).toBeNull();
   });
 
   it('мусор вместо JSON — Прогресса нет, начинается с чистого листа', () => {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { HintLadder } from './HintLadder';
 import { Verdict } from './Verdict';
 import type { NumericAnswer, NumericQuestionEvaluation } from '../domain/evaluate';
 import type { NumericQuestion } from '../domain/task';
@@ -82,6 +83,8 @@ export function NumericQuestionScreen({
           {unitHint(question.unit)}
         </p>
       )}
+
+      {!answered && question.hints && <HintLadder hints={question.hints} />}
 
       {evaluation && (
         <>

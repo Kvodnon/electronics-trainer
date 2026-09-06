@@ -5,6 +5,7 @@ import type { SymbolStandard } from '../../domain/symbols';
 import { symbolStandards } from '../../domain/symbols';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
+import { HintLadder } from '../HintLadder';
 import {
   readingsByComponent,
   solveDc,
@@ -131,10 +132,13 @@ export function CircuitTaskScreen({
 
   return (
     <section className="panel circuit-task" aria-labelledby="circuit-prompt">
-      <p className="question-kind">Схема-задание</p>
+      <p className="question-kind">{task.isExam ? 'Экзамен' : 'Схема-задание'}</p>
       <h2 id="circuit-prompt" className="question-prompt">
         {task.prompt}
       </h2>
+      {shownEvaluation?.outcome !== 'correct' && task.hints && (
+        <HintLadder hints={task.hints} />
+      )}
       <CanvasEditor
         palette={task.palette}
         history={history}

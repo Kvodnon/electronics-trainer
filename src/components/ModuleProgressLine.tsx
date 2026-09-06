@@ -10,7 +10,10 @@ export function taskStateName(state: TaskState): string {
   return stateNames[state];
 }
 
-/** Строка Прогресса Модуля: сколько Заданий пройдено, сколько на повторении. */
+/**
+ * Строка Прогресса Модуля: сколько Заданий пройдено, сколько на повторении
+ * и сколько из пройденных — с первой попытки.
+ */
 export function ModuleProgressLine({ progress }: { progress: ModuleProgress }) {
   return (
     <p className="module-progress">
@@ -19,6 +22,12 @@ export function ModuleProgressLine({ progress }: { progress: ModuleProgress }) {
         <span className="module-progress-retry">
           {' '}
           · на повторении: {progress.returnedForRetry}
+        </span>
+      )}
+      {progress.solvedOnFirstAttempt > 0 && (
+        <span className="module-progress-first-attempt">
+          {' '}
+          · с первой попытки: {progress.solvedOnFirstAttempt}
         </span>
       )}
     </p>

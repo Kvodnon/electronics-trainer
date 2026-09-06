@@ -9,6 +9,18 @@ import type { ComponentKind } from './canvas';
 export type ChoiceId = string;
 
 /**
+ * Лестница Подсказок (CONTEXT.md: Подсказка) — ступени помощи внутри Задания.
+ * Ступень 1 — наводящий вопрос, ступень 2 — почти решение; готовый ответ
+ * не выдаётся ни на какой ступени (это договорённость о контенте).
+ */
+export interface TaskHints {
+  /** Ступень 1: наводящий вопрос, подталкивающий к нужной мысли. */
+  readonly question: string;
+  /** Ступень 2: почти решение — путь к ответу без самого ответа. */
+  readonly almostSolution: string;
+}
+
+/**
  * Вариант ответа Вопроса с выбором.
  * `razbor` — Разбор: для верного варианта — почему он верен,
  * для неверного — какая ошибка мышления за ним стоит.
@@ -29,6 +41,8 @@ export interface ChoiceQuestion {
   readonly prompt: string;
   readonly choices: readonly Choice[];
   readonly correctChoiceId: ChoiceId;
+  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
+  readonly hints?: TaskHints;
 }
 
 /**
@@ -47,6 +61,8 @@ export interface NumericQuestion {
   readonly tolerance?: number;
   readonly razbor: string;
   readonly solutionSteps: readonly string[];
+  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
+  readonly hints?: TaskHints;
 }
 
 /** Диапазон измерения в базовой единице (А, В, Ом, Вт), границы включительно. */
@@ -108,6 +124,13 @@ export interface CircuitTask {
   readonly palette: readonly ComponentKind[];
   /** Условия-измерения: все должны выполняться по решению Симулятора. */
   readonly conditions: readonly CircuitCondition[];
+  /**
+   * Экзамен: финальное Схема-задание Модуля, объединяющее его темы; закрыто,
+   * пока не пройдены все остальные Задания Модуля (правило живёт в домене Курса).
+   */
+  readonly isExam?: boolean;
+  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
+  readonly hints?: TaskHints;
 }
 
 /** Задание — единица работы ученика; виды добавляются по мере Модулей. */

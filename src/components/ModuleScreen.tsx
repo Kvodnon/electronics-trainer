@@ -5,9 +5,16 @@ import { NumericQuestionScreen } from './NumericQuestionScreen';
 import { QuestionScreen } from './QuestionScreen';
 import { CircuitTaskScreen } from './canvas/CircuitTaskScreen';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
-import { moduleProgressOf, moduleTaskQueue, taskStateOf } from '../domain/course';
+import {
+  isExamTask,
+  isExamUnlocked,
+  moduleProgressOf,
+  moduleTaskQueue,
+  solvedOnFirstAttemptOf,
+  taskStateOf,
+} from '../domain/course';
 import type { Answer } from '../domain/evaluate';
-import type { CourseAction, CourseModule, CourseProgress, TheoryCard } from '../domain/course';
+import type { CourseAction, CourseModule, CourseProgress, TaskState, TheoryCard } from '../domain/course';
 import type { SymbolStandard } from '../domain/symbols';
 
 interface ModuleScreenProps {
@@ -55,6 +62,21 @@ export function ModuleScreen({
     setStep((n) => n + 1);
   }
 
+  function handleAnswer(answer: Answer) {
+    if (!currentTask) return;
+    // Схема-задание проверяется на месте и ученика не выпускает: неудачная
+    // проверка — только отметка о попытке в Прогрессе («с первой попытки»
+    // сорвана), очередь не меняется. Вопросы уходят по «Дальше» — там
+    // общее правило возвращения на повтор.
+    if (
+      currentTask.kind === 'circuit-task' &&
+      evaluate(currentTask, answer).outcome !== 'correct'
+    ) {
+      onProgressAction({ type: 'attempt-failed', taskId: currentTask.id });
+    }
+    setAnswer(answer);
+  }
+
   return (
     <div className="module-screen">
       <header className="module-header">
@@ -67,11 +89,26 @@ export function ModuleScreen({
           <ul className="task-progress" aria-label="Состояние Заданий Модуля">
             {module.tasks.map((moduleTask, index) => {
               const state = taskStateOf(progress, moduleTask.id);
+              const exam = isExamTask(moduleTask);
+              const firstAttempt = solvedOnFirstAttemptOf(progress, moduleTask.id);
+              // Закрытый экзамен — «не начат», но виден как закрытый
+              const examLocked =
+                exam && !isExamUnlocked(module, progress) && state === 'not-started';
               return (
                 <li
                   key={moduleTask.id}
-                  className={`task-dot task-dot-${state}`}
-                  title={`Задание ${index + 1} — ${taskStateName(state)}`}
+                  className={
+                    [
+                      'task-dot',
+                      `task-dot-${state}`,
+                      firstAttempt ? 'task-dot-first-attempt' : '',
+                      exam ? 'task-dot-exam' : '',
+                      examLocked ? 'task-dot-exam-locked' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                  }
+                  title={taskDotTitle(index, state, { exam, examLocked, firstAttempt })}
                 />
               );
             })}
@@ -92,7 +129,9 @@ export function ModuleScreen({
             key={`${currentTask.id}:${step}`}
             question={currentTask}
             evaluation={evaluationOfKind(evaluation, 'choice-question')}
-            onAnswer={(choiceId) => setAnswer({ kind: 'choice-answer', chosenChoiceId: choiceId })}
+            onAnswer={(choiceId) =>
+              handleAnswer({ kind: 'choice-answer', chosenChoiceId: choiceId })
+            }
             onNext={goNext}
           />
         ) : currentTask.kind === 'numeric-question' ? (
@@ -100,7 +139,7 @@ export function ModuleScreen({
             key={`${currentTask.id}:${step}`}
             question={currentTask}
             evaluation={evaluationOfKind(evaluation, 'numeric-question')}
-            onAnswer={setAnswer}
+            onAnswer={handleAnswer}
             onNext={goNext}
           />
         ) : (
@@ -108,7 +147,7 @@ export function ModuleScreen({
             key={`${currentTask.id}:${step}`}
             task={currentTask}
             evaluation={evaluationOfKind(evaluation, 'circuit-task')}
-            onAnswer={setAnswer}
+            onAnswer={handleAnswer}
             onNext={goNext}
             symbolStandard={symbolStandard}
             onSymbolStandardChange={onSymbolStandardChange}
@@ -135,6 +174,24 @@ interface TheoryCardViewProps {
   position: { index: number; total: number };
   onNextCard: () => void;
   onFinish: () => void;
+}
+
+/**
+ * Подпись точки состояния Задания: обычное Задание или Экзамен. У Экзамена
+ * свой род («решён»), у решённого с первой попытки — своя пометка вместо
+ * обычного состояния.
+ */
+function taskDotTitle(
+  index: number,
+  state: TaskState,
+  flags: { exam: boolean; examLocked: boolean; firstAttempt: boolean },
+): string {
+  if (flags.examLocked) return 'Экзамен — откроется после остальных Заданий';
+  const name = flags.exam ? 'Экзамен' : `Задание ${index + 1}`;
+  if (flags.firstAttempt) {
+    return flags.exam ? `${name} — решён с первой попытки` : `${name} — решено с первой попытки`;
+  }
+  return `${name} — ${taskStateName(state)}`;
 }
 
 /** Карточка Теории: текст, формулы и обозначения двух стандартов рядом. */

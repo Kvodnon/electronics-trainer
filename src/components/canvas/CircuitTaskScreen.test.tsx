@@ -6,6 +6,7 @@ import type { CircuitTask } from '../../domain/task';
 import type { SymbolStandard } from '../../domain/symbols';
 import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
+import { isExamTask } from '../../domain/course';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
 import { CircuitTaskScreen } from './CircuitTaskScreen';
 
@@ -791,6 +792,38 @@ describe('Стандарт обозначений', () => {
     expect(glow).not.toBeNull();
     // 9 В на 120 Ом — полный накал, как и в ГОСТ
     expect(glow!.getAttribute('opacity')).toBe('1');
+  });
+});
+
+describe('Подсказки и Экзамен на экране Схема-задания', () => {
+  /** Витринное Схема-задание М2 из настоящего контента (с Подсказками). */
+  function renderModule2Task(task = module2.tasks.find((t): t is CircuitTask => t.kind === 'circuit-task')!) {
+    return renderTask(task);
+  }
+
+  it('подсказка открывается по ступеням, пока Задание не решено', async () => {
+    const user = userEvent.setup();
+    renderModule2Task();
+
+    expect(screen.getByText('Схема-задание')).toBeInTheDocument();
+    expect(screen.queryByText(/замкнутое кольцо/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Подсказка' }));
+    expect(screen.getByText(/замкнутое кольцо/)).toBeInTheDocument();
+    expect(screen.queryByText(/«плюс» батареи/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Ещё подсказка' }));
+    expect(screen.getByText(/«плюс» батареи/)).toBeInTheDocument();
+  });
+
+  it('Экзамен помечен вместо «Схема-задание»', () => {
+    const exam = module2.tasks.find(isExamTask)!;
+    renderModule2Task(exam);
+
+    expect(screen.getByText('Экзамен')).toBeInTheDocument();
+    expect(screen.queryByText('Схема-задание')).not.toBeInTheDocument();
+    // У экзамена тоже есть своя лестница Подсказок
+    expect(screen.getByRole('button', { name: 'Подсказка' })).toBeInTheDocument();
   });
 });
 

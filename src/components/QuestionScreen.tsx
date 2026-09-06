@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { HintLadder } from './HintLadder';
 import { Verdict } from './Verdict';
 import type { ChoiceQuestionEvaluation } from '../domain/evaluate';
 import type { ChoiceQuestion } from '../domain/task';
@@ -65,6 +66,8 @@ export function QuestionScreen({ question, evaluation, onAnswer, onNext }: Quest
           );
         })}
       </ul>
+
+      {!answered && question.hints && <HintLadder hints={question.hints} />}
 
       {evaluation && (
         <>
