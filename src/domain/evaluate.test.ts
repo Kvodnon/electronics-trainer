@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { evaluate } from './evaluate';
-import type { ChoiceQuestion, NumericQuestion } from './task';
+import type { ChoiceQuestion, CircuitTask, NumericQuestion } from './task';
+import type { CanvasState, PlacedComponent, PinRef, Wire } from './canvas';
+import { defaultValuesOf } from './canvas';
+import type { ComponentKind } from './canvas';
 
 // Фикстуры независимы от контента приложения: ожидания — известные литералы,
 // а не значения, пересчитанные тем же способом, что и проверяемый код.
@@ -130,16 +133,111 @@ describe('evaluate: числовой Вопрос', () => {
     expect(() => evaluate(numericQuestion, { kind: 'choice-answer', chosenChoiceId: 'v' })).toThrow();
     expect(() => evaluate(question, { kind: 'numeric-answer', value: 1 })).toThrow();
   });
+});
 
-  it('Схема-задание честно сообщает, что проверка появится с Симулятором (тикет 05)', () => {
-    const circuitTask = {
-      kind: 'circuit-task',
-      id: 'demo',
-      prompt: 'Соберите цепь',
-      palette: ['battery', 'lamp'],
-    } as const;
-    expect(() => evaluate(circuitTask, { kind: 'choice-answer', chosenChoiceId: 'v' })).toThrow(
-      /Симулятором/,
+// Схема-задания: проверка Симулятором по измерениям, не по эталону.
+
+const component = (id: string, kind: ComponentKind, values: Partial<PlacedComponent> = {}): PlacedComponent => ({
+  id,
+  kind,
+  x: 0,
+  y: 0,
+  rotation: 0,
+  ...defaultValuesOf(kind),
+  ...values,
+});
+
+const wire = (id: string, from: PinRef, to: PinRef): Wire => ({ id, from, to });
+
+const pin = (componentId: string, n: number): PinRef => ({ componentId, pin: n });
+
+const circuitAnswer = (components: PlacedComponent[], wires: Wire[]) => ({
+  kind: 'circuit-answer' as const,
+  canvas: { components, wires } as CanvasState,
+});
+
+/** Задание: резистор нагружен током 8–10 мА от батареи. */
+const ohmTask: CircuitTask = {
+  kind: 'circuit-task',
+  id: 'fixture-circuit-01',
+  prompt: 'Подберите нагрузку: ток через резистор 8–10 мА.',
+  palette: ['battery', 'resistor'],
+  conditions: [
+    { kind: 'component-used', componentKind: 'battery' },
+    { kind: 'component-used', componentKind: 'resistor' },
+    { kind: 'current-through', componentKind: 'resistor', range: { from: 0.008, to: 0.01 } },
+  ],
+};
+
+describe('evaluate: Схема-задание', () => {
+  it('простая схема в границах условий → вердикт correct с Разбором по расчёту', () => {
+    const verdict = evaluate(
+      ohmTask,
+      circuitAnswer(
+        [component('b', 'battery'), component('r', 'resistor')],
+        [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('b', 1))],
+      ),
+    );
+    expect(verdict.outcome).toBe('correct');
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    expect(verdict.conditionChecks).toHaveLength(3);
+    expect(verdict.conditionChecks.every((check) => check.passed)).toBe(true);
+    // Разбор построен на вычисленном токе
+    expect(verdict.conditionChecks[2].text).toContain('9 мА');
+    expect(verdict.solution.readings).toHaveLength(2);
+  });
+
+  it('эквивалентные схемы проходят одинаково: один резистор 1 кОм или два 500 Ом последовательно', () => {
+    // ток через каждый резистор последовательной цепи тот же, что через один
+    // эквивалентный: топология другая — физика та же
+    const single = circuitAnswer(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 1000 })],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('b', 1))],
+    );
+    const series = circuitAnswer(
+      [
+        component('b', 'battery'),
+        component('r1', 'resistor', { resistance: 500 }),
+        component('r2', 'resistor', { resistance: 500 }),
+      ],
+      [
+        wire('w1', pin('b', 0), pin('r1', 0)),
+        wire('w2', pin('r1', 1), pin('r2', 0)),
+        wire('w3', pin('r2', 1), pin('b', 1)),
+      ],
+    );
+    expect(evaluate(ohmTask, single).outcome).toBe('correct');
+    expect(evaluate(ohmTask, series).outcome).toBe('correct');
+  });
+
+  it('схема вне границ → incorrect, Разбор называет измерение', () => {
+    const verdict = evaluate(
+      ohmTask,
+      circuitAnswer(
+        [component('b', 'battery'), component('r', 'resistor', { resistance: 100000 })],
+        [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('b', 1))],
+      ),
+    );
+    expect(verdict.outcome).toBe('incorrect');
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    const current = verdict.conditionChecks.find(
+      (check) => check.condition.kind === 'current-through',
+    )!;
+    expect(current.passed).toBe(false);
+    expect(current.text).toContain('90 мкА');
+  });
+
+  it('пустой Холст проваливает структурное требование', () => {
+    const verdict = evaluate(ohmTask, circuitAnswer([], []));
+    expect(verdict.outcome).toBe('incorrect');
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    expect(verdict.conditionChecks[0].passed).toBe(false);
+  });
+
+  it('Ответ чужого вида — ошибка контракта', () => {
+    expect(() => evaluate(ohmTask, { kind: 'choice-answer', chosenChoiceId: 'v' })).toThrow(/не подходит/);
+    expect(() => evaluate(numericQuestion, { kind: 'circuit-answer', canvas: { components: [], wires: [] } })).toThrow(
+      /не подходит/,
     );
   });
 });

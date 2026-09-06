@@ -943,3 +943,56 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
+
+/* Схема-задание: проверка Симулятором */
+
+.canvas-check {
+  margin-left: auto;
+}
+
+.circuit-verdict {
+  margin-top: 14px;
+}
+
+.circuit-verdict .verdict {
+  margin: 0 0 12px;
+}
+
+.circuit-conditions {
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.circuit-condition {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--panel-raised);
+  border-left: 3px solid var(--border-strong);
+}
+
+.circuit-condition-passed {
+  border-left-color: var(--correct);
+}
+
+.circuit-condition-failed {
+  border-left-color: var(--incorrect);
+}
+
+.circuit-condition-mark {
+  font-weight: 700;
+  min-width: 1em;
+}
+
+.circuit-condition-passed .circuit-condition-mark {
+  color: var(--correct);
+}
+
+.circuit-condition-failed .circuit-condition-mark {
+  color: var(--incorrect);
+}

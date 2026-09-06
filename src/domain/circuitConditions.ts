@@ -1,0 +1,206 @@
+/**
+ * Проверка условий Схема-задания по решению Симулятора (ADR-0001): каждое
+ * условие-измерение превращается в строку Разбора с измеренными числами.
+ * Эквивалентные схемы проходят одинаково — сравнивается физика, не эталон.
+ * Чистый TypeScript без DOM.
+ */
+import type { CanvasState, ComponentKind } from './canvas';
+import type { CircuitCondition } from './task';
+import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quantity';
+import {
+  LAMP_LIT_POWER,
+  MOTOR_SPIN_POWER,
+  isLampLit,
+  isMotorSpinning,
+  readingsOfKind,
+  type ComponentReading,
+  type DcSolution,
+} from './simulator';
+
+/** Проверка одного условия: исход и готовая строка Разбора с числами расчёта. */
+export interface ConditionCheck {
+  readonly condition: CircuitCondition;
+  readonly passed: boolean;
+  readonly text: string;
+}
+
+/** Русские формы имени вида Компонента для строк Разбора. */
+interface ComponentLexis {
+  readonly nominative: string;
+  readonly accusative: string;
+  readonly prepositional: string;
+  readonly genitive: string;
+  readonly genitivePlural: string;
+}
+
+/** Русские формы имён Компонентов для строк Разбора. */
+const COMPONENT_LEXIS: Record<ComponentKind, ComponentLexis> = {
+  battery: { nominative: 'батарея', accusative: 'батарею', prepositional: 'батарее', genitive: 'батареи', genitivePlural: 'батарей' },
+  resistor: { nominative: 'резистор', accusative: 'резистор', prepositional: 'резисторе', genitive: 'резистора', genitivePlural: 'резисторов' },
+  lamp: { nominative: 'лампочка', accusative: 'лампочку', prepositional: 'лампочке', genitive: 'лампочки', genitivePlural: 'лампочек' },
+  switch: { nominative: 'выключатель', accusative: 'выключатель', prepositional: 'выключателе', genitive: 'выключателя', genitivePlural: 'выключателей' },
+  pushbutton: { nominative: 'ключ', accusative: 'ключ', prepositional: 'ключе', genitive: 'ключа', genitivePlural: 'ключей' },
+  motor: { nominative: 'моторчик', accusative: 'моторчик', prepositional: 'моторчике', genitive: 'моторчика', genitivePlural: 'моторчиков' },
+};
+
+/** Первая буква — заглавная: строки Разбора начинаются именем Компонента. */
+function cap(text: string): string {
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+/**
+ * Проверяет все условия Задания. Схема без Компонентов честно проваливает
+ * любое условие — Разбор объяснит, чего не хватает.
+ */
+export function checkConditions(
+  canvas: CanvasState,
+  solution: DcSolution,
+  conditions: readonly CircuitCondition[],
+): readonly ConditionCheck[] {
+  return conditions.map((condition) => {
+    switch (condition.kind) {
+      case 'component-used':
+        return checkComponentUsed(canvas, condition);
+      case 'current-through':
+      case 'voltage-across':
+      case 'power-of':
+        return checkMeasurement(solution, condition, MEASUREMENT_TRAITS[condition.kind]);
+      case 'component-active':
+        return checkComponentActive(solution, condition);
+    }
+  });
+}
+
+/** Какое показание Компонента сверяется с диапазоном и как оно называется в Разборе. */
+interface MeasurementTraits {
+  /** Поле показания Компонента. */
+  readonly field: 'current' | 'voltage' | 'power';
+  /** Единица величины для записи с приставкой. */
+  readonly unit: QuantityUnit;
+  /** Заголовок измерения по лексике вида. */
+  readonly title: (lexis: ComponentLexis) => string;
+}
+
+const MEASUREMENT_TRAITS: Record<'current-through' | 'voltage-across' | 'power-of', MeasurementTraits> = {
+  'current-through': {
+    field: 'current',
+    unit: 'А',
+    title: (lexis) => `Ток через ${lexis.accusative}`,
+  },
+  'voltage-across': {
+    field: 'voltage',
+    unit: 'В',
+    title: (lexis) => `Напряжение на ${lexis.prepositional}`,
+  },
+  'power-of': {
+    field: 'power',
+    unit: 'Вт',
+    title: (lexis) => `Мощность ${lexis.genitive}`,
+  },
+};
+
+/** «Использован Компонент»: количество штук в границах [min, max]. */
+function checkComponentUsed(
+  canvas: CanvasState,
+  condition: Extract<CircuitCondition, { kind: 'component-used' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const count = canvas.components.filter((c) => c.kind === condition.componentKind).length;
+  const min = condition.min ?? 1;
+  const max = condition.max ?? Number.POSITIVE_INFINITY;
+  const phrase =
+    min === max
+      ? `ровно ${min} шт.`
+      : max === Number.POSITIVE_INFINITY
+        ? `не менее ${min} шт.`
+        : min === 0
+          ? `не более ${max} шт.`
+          : `от ${min} до ${max} шт.`;
+  return {
+    condition,
+    passed: count >= min && count <= max,
+    text: `${cap(lexis.nominative)} на схеме: ${count} шт. (по условию: ${phrase})`,
+  };
+}
+
+/** Проверка условия-измерения: годится любой Компонент вида в границах. */
+function checkMeasurement(
+  solution: DcSolution,
+  condition: Extract<CircuitCondition, { kind: 'current-through' | 'voltage-across' | 'power-of' }>,
+  traits: MeasurementTraits,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const readings = readingsOfKind(solution, condition.componentKind);
+
+  if (readings.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `${traits.title(lexis)} не измерен: на схеме нет ${lexis.genitivePlural}.`,
+    };
+  }
+
+  // Компоненты М1 симметричны: знак тока и напряжения — артефакт ориентации
+  // символа на Холсте, условие проверяет модуль величины
+  const valueOf = (reading: ComponentReading): number => Math.abs(reading[traits.field]);
+  const inRange = (reading: ComponentReading): boolean => {
+    const value = valueOf(reading);
+    return value >= condition.range.from && value <= condition.range.to;
+  };
+  // в Разбор — попавшее в границы показание; если таких нет, ближайшее к границам
+  const distance = (reading: ComponentReading): number => {
+    const value = valueOf(reading);
+    if (value < condition.range.from) return condition.range.from - value;
+    if (value > condition.range.to) return value - condition.range.to;
+    return 0;
+  };
+  const candidate =
+    readings.find(inRange) ?? readings.reduce((best, reading) => (distance(reading) < distance(best) ? reading : best));
+
+  const bounds = formatQuantityRange(condition.range.from, condition.range.to, traits.unit);
+  return {
+    condition,
+    passed: readings.some(inRange),
+    text: `${traits.title(lexis)} — ${formatQuantity(valueOf(candidate), traits.unit)}, ${
+      inRange(candidate) ? 'в границах' : 'вне границ'
+    } условия (${bounds}).`,
+  };
+}
+
+/** Порог и глагол активного состояния по виду Компонента. */
+const ACTIVE_TRAITS: Record<'lamp' | 'motor', { threshold: number; verb: string; isActive: (reading: ComponentReading) => boolean }> = {
+  lamp: { threshold: LAMP_LIT_POWER, verb: 'горит', isActive: isLampLit },
+  motor: { threshold: MOTOR_SPIN_POWER, verb: 'крутится', isActive: isMotorSpinning },
+};
+
+/** Проверка активного состояния: лампочка горит / моторчик крутится. */
+function checkComponentActive(
+  solution: DcSolution,
+  condition: Extract<CircuitCondition, { kind: 'component-active' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const { threshold, verb, isActive } = ACTIVE_TRAITS[condition.componentKind];
+  const readings = readingsOfKind(solution, condition.componentKind);
+
+  if (readings.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `${cap(lexis.nominative)} на схеме нет — состояние проверить не на чем.`,
+    };
+  }
+
+  const anyActive = readings.some(isActive);
+  const candidate = readings.find(isActive) ?? readings[0];
+  const power = formatQuantity(candidate.power, 'Вт');
+  const passed = condition.active ? anyActive : !anyActive;
+  const fact = anyActive
+    ? `${cap(lexis.nominative)} ${verb}: мощность ${power} не ниже порога ${formatQuantity(threshold, 'Вт')}.`
+    : `${cap(lexis.nominative)} не ${verb}: мощность ${power} ниже порога ${formatQuantity(threshold, 'Вт')}.`;
+
+  if (condition.active || !anyActive) {
+    return { condition, passed, text: fact };
+  }
+  // требуется «не горит», а Компонент активен
+  return { condition, passed, text: `${fact} По условию ${lexis.nominative} активной быть не должна.` };
+}

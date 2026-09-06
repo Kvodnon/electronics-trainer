@@ -98,9 +98,13 @@ export function ModuleScreen({
             onNext={goNext}
           />
         ) : (
-          // Схема-задание: проверки пока нет (Симулятор — тикет 05),
-          // Холст собирается и сбрасывается; Задание не завершается.
-          <CircuitTaskScreen key={`${currentTask.id}:${step}`} task={currentTask} />
+          <CircuitTaskScreen
+            key={`${currentTask.id}:${step}`}
+            task={currentTask}
+            evaluation={evaluationOfKind(evaluation, 'circuit-task')}
+            onAnswer={setAnswer}
+            onNext={goNext}
+          />
         )
       ) : (
         <section className="panel done" aria-labelledby="module-done-heading">

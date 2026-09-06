@@ -2,7 +2,10 @@
  * Проверка Ответа — главный шов домена: `evaluate(Задание, ответ) → вердикт`.
  * Вердикт содержит всё, что нужно UI: исход и Разбор (или решение).
  */
-import type { ChoiceId, ChoiceQuestion, NumericQuestion, Task } from './task';
+import type { ChoiceId, ChoiceQuestion, CircuitTask, NumericQuestion, Task } from './task';
+import type { CanvasState } from './canvas';
+import { checkConditions, type ConditionCheck } from './circuitConditions';
+import { solveDc, type DcSolution } from './simulator';
 
 /** Ответ ученика на Вопрос с выбором варианта. */
 export interface ChoiceAnswer {
@@ -16,8 +19,14 @@ export interface NumericAnswer {
   readonly value: number;
 }
 
+/** Ответ ученика на Схема-задание: собранная на Холсте схема. */
+export interface CircuitAnswer {
+  readonly kind: 'circuit-answer';
+  readonly canvas: CanvasState;
+}
+
 /** Ответ ученика на Задание. */
-export type Answer = ChoiceAnswer | NumericAnswer;
+export type Answer = ChoiceAnswer | NumericAnswer | CircuitAnswer;
 
 /** Разбор одного варианта в контексте проверки. */
 export interface ChoiceReview {
@@ -54,8 +63,20 @@ export interface NumericQuestionEvaluation {
   readonly solutionSteps: readonly string[];
 }
 
+/**
+ * Вердикт проверки Схема-задания: все условия по решению Симулятора.
+ * Разбор каждого условия — строка с измеренными числами расчёта.
+ */
+export interface CircuitTaskEvaluation {
+  readonly kind: 'circuit-task';
+  readonly outcome: 'correct' | 'incorrect';
+  readonly conditionChecks: readonly ConditionCheck[];
+  /** Расчёт, на котором построен вердикт: токи и напряжения собранной схемы. */
+  readonly solution: DcSolution;
+}
+
 /** Вердикт проверки Задания. */
-export type Evaluation = ChoiceQuestionEvaluation | NumericQuestionEvaluation;
+export type Evaluation = ChoiceQuestionEvaluation | NumericQuestionEvaluation | CircuitTaskEvaluation;
 
 /**
  * Вердикт указанного вида или null. Вызывающий знает вид Задания, а TypeScript
@@ -80,9 +101,8 @@ export function evaluate(task: Task, answer: Answer): Evaluation {
   if (task.kind === 'numeric-question' && answer.kind === 'numeric-answer') {
     return evaluateNumeric(task, answer);
   }
-  if (task.kind === 'circuit-task') {
-    // Симулятор и Диагнозы — тикет 05; Холст без проверки — тикет 04.
-    throw new Error('Проверка Схема-заданий появится вместе с Симулятором (тикет 05)');
+  if (task.kind === 'circuit-task' && answer.kind === 'circuit-answer') {
+    return evaluateCircuit(task, answer);
   }
   throw new Error(`Ответ вида «${answer.kind}» не подходит Заданию вида «${task.kind}»`);
 }
@@ -130,5 +150,20 @@ function evaluateNumeric(
     tolerance,
     razbor: question.razbor,
     solutionSteps: question.solutionSteps,
+  };
+}
+
+/**
+ * Проверка Схема-задания: Симулятор считает токи и напряжения, условия
+ * проверяются по решению. Эквивалентные схемы дают одинаковый исход.
+ */
+function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskEvaluation {
+  const solution = solveDc(answer.canvas);
+  const conditionChecks = checkConditions(answer.canvas, solution, task.conditions);
+  return {
+    kind: 'circuit-task',
+    outcome: conditionChecks.every((check) => check.passed) ? 'correct' : 'incorrect',
+    conditionChecks,
+    solution,
   };
 }

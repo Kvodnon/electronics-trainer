@@ -1,13 +1,13 @@
-import { useReducer, useRef, useState } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import type {
   MouseEvent as ReactMouseEvent,
   DragEvent as ReactDragEvent,
   KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import {
-  canvasReducer,
-  emptyHistory,
   suggestPlacementPosition,
+  type CanvasAction,
+  type CanvasHistory,
   type ComponentKind,
   type PlacedComponent,
   type PinRef,
@@ -30,9 +30,11 @@ const COMPONENT_HIT_RADIUS = 34;
 const LABEL_OFFSET_Y = -38;
 
 /**
- * Редактор Холста: тонкий слой над домен-редьюсером. Вся логика редактора
- * (постановка, перемещение, поворот, удаление, Провода, номиналы, undo/redo,
- * сброс) — действия `canvasReducer`; здесь только мышиные жесты и отрисовка.
+ * Редактор Холста: тонкий слой над домен-редьюсером. Состояние Холста живёт
+ * выше (экран Схема-задания) — редактор управляемый: жесты мышью превращаются
+ * в действия `canvasReducer`, отрисовка читает переданную историю. Вся логика
+ * редактора (постановка, перемещение, поворот, удаление, Провода, номиналы,
+ * undo/redo, сброс) — в редьюсере; здесь только мышиные жесты и отрисовка.
  * Перетаскивание Компонента рисуется поверх состояния и фиксируется в
  * редьюсер одним действием на отпускании кнопки.
  */
@@ -52,8 +54,15 @@ interface WireDraftState {
   readonly cursor: Point;
 }
 
-export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] }) {
-  const [history, dispatch] = useReducer(canvasReducer, emptyHistory);
+interface CanvasEditorProps {
+  readonly palette: readonly ComponentKind[];
+  readonly history: CanvasHistory;
+  readonly onAction: (action: CanvasAction) => void;
+  /** Кнопки Задания в панели редактора — например, «Проверить». */
+  readonly actions?: ReactNode;
+}
+
+export function CanvasEditor({ palette, history, onAction, actions }: CanvasEditorProps) {
   const canvas = history.present;
   const [selection, setSelection] = useState<Selection>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -88,7 +97,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
 
   function placeFromPalette(kind: ComponentKind) {
     const spot = suggestPlacementPosition(canvas);
-    dispatch({ type: 'component-placed', kind, x: spot.x, y: spot.y });
+    onAction({ type: 'component-placed', kind, x: spot.x, y: spot.y });
     setWireDraft(null);
   }
 
@@ -126,7 +135,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
     if (drag === null) return;
     const original = componentById.get(drag.componentId);
     if (original && (original.x !== drag.position.x || original.y !== drag.position.y)) {
-      dispatch({
+      onAction({
         type: 'component-moved',
         componentId: drag.componentId,
         x: drag.position.x,
@@ -146,7 +155,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
       setWireDraft({ from: ref, cursor: { x: origin.x, y: origin.y } });
       return;
     }
-    dispatch({ type: 'wire-drawn', from: wireDraft.from, to: ref });
+    onAction({ type: 'wire-drawn', from: wireDraft.from, to: ref });
     setWireDraft(null);
   }
 
@@ -157,7 +166,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
 
   function removeSelection() {
     if (selection === null) return;
-    dispatch(
+    onAction(
       selection.kind === 'component'
         ? { type: 'component-removed', componentId: selection.id }
         : { type: 'wire-removed', wireId: selection.id },
@@ -167,7 +176,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
 
   function rotateSelection() {
     if (selectedComponent === null) return;
-    dispatch({ type: 'component-rotated', componentId: selectedComponent.id });
+    onAction({ type: 'component-rotated', componentId: selectedComponent.id });
   }
 
   function handleKeyDown(event: ReactKeyboardEvent) {
@@ -194,7 +203,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
     if (!kind) return;
     event.preventDefault();
     const point = pointFromEvent(event);
-    dispatch({ type: 'component-placed', kind, x: point.x, y: point.y });
+    onAction({ type: 'component-placed', kind, x: point.x, y: point.y });
   }
 
   const wireFrom = (ref: PinRef): DirectedPoint => {
@@ -241,7 +250,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
           type="button"
           className="button-secondary"
           disabled={history.past.length === 0}
-          onClick={() => dispatch({ type: 'undo' })}
+          onClick={() => onAction({ type: 'undo' })}
         >
           Отменить
         </button>
@@ -249,7 +258,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
           type="button"
           className="button-secondary"
           disabled={history.future.length === 0}
-          onClick={() => dispatch({ type: 'redo' })}
+          onClick={() => onAction({ type: 'redo' })}
         >
           Вернуть
         </button>
@@ -258,12 +267,13 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
           className="button-secondary button-danger"
           disabled={canvas.components.length === 0 && canvas.wires.length === 0}
           onClick={() => {
-            dispatch({ type: 'canvas-reset' });
+            onAction({ type: 'canvas-reset' });
             clearCanvasInteraction();
           }}
         >
           Сбросить схему
         </button>
+        {actions}
         <span className="canvas-toolbar-hint">
           {wireDraft !== null
             ? 'Проведите Провод до второго вывода; Esc — отменить'
@@ -384,7 +394,7 @@ export function CanvasEditor({ palette }: { palette: readonly ComponentKind[] })
           onRotate={rotateSelection}
           onRemove={removeSelection}
           onValueSet={(patch) =>
-            dispatch({ type: 'component-value-set', componentId: selectedComponent.id, patch })
+            onAction({ type: 'component-value-set', componentId: selectedComponent.id, patch })
           }
         />
       ) : selection !== null && selection.kind === 'wire' ? (

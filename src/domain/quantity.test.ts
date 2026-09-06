@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatQuantity, parseQuantity } from './quantity';
+import { formatQuantity, formatQuantityRange, parseQuantity } from './quantity';
 
 // Парсер числового Ответа — чистая функция домена: «сырая» строка ученика →
 // значение в базовой единице либо понятное сообщение об ошибке.
@@ -97,5 +97,17 @@ describe('formatQuantity: значение в базовой единице → 
   it('ноль и отрицательные значения', () => {
     expect(formatQuantity(0, 'В')).toBe('0 В');
     expect(formatQuantity(-0.005, 'В')).toBe('-5 мВ');
+  });
+});
+
+describe('formatQuantityRange: диапазон измерения → читаемая запись', () => {
+  it('обе границы — с одной и той же приставкой по верхней границе', () => {
+    expect(formatQuantityRange(0.05, 0.1, 'А')).toBe('50–100 мА');
+    expect(formatQuantityRange(6, 12, 'В')).toBe('6–12 В');
+    expect(formatQuantityRange(1000, 2000, 'Ом')).toBe('1–2 кОм');
+  });
+
+  it('нижняя граница нуля не тянет приставку вниз', () => {
+    expect(formatQuantityRange(0, 0.02, 'Вт')).toBe('0–20 мВт');
   });
 });

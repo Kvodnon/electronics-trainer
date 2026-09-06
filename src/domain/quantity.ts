@@ -5,7 +5,7 @@
  */
 
 /** Базовая единица величины числового Вопроса. */
-export type QuantityUnit = 'А' | 'В' | 'Ом';
+export type QuantityUnit = 'А' | 'В' | 'Ом' | 'Вт';
 
 /** Результат разбора: либо значение в базовой единице, либо сообщение ученику. */
 export type QuantityParseResult =
@@ -21,10 +21,12 @@ const UNIT_SUFFIXES: Record<
   readonly { readonly suffix: string; readonly factor: number }[]
 > = {
   'А': [
+    { suffix: 'мкА', factor: 1e-6 },
     { suffix: 'мА', factor: 1e-3 },
     { suffix: 'А', factor: 1 },
   ],
   'В': [
+    { suffix: 'мкВ', factor: 1e-6 },
     { suffix: 'мВ', factor: 1e-3 },
     { suffix: 'В', factor: 1 },
     { suffix: 'кВ', factor: 1e3 },
@@ -33,6 +35,10 @@ const UNIT_SUFFIXES: Record<
     { suffix: 'Ом', factor: 1 },
     { suffix: 'кОм', factor: 1e3 },
     { suffix: 'МОм', factor: 1e6 },
+  ],
+  'Вт': [
+    { suffix: 'мВт', factor: 1e-3 },
+    { suffix: 'Вт', factor: 1 },
   ],
 };
 
@@ -46,6 +52,7 @@ const UNIT_NOUNS: Record<QuantityUnit, string> = {
   'А': 'амперы',
   'В': 'вольты',
   'Ом': 'омы',
+  'Вт': 'ватты',
 };
 
 export function unitNoun(unit: QuantityUnit): string {
@@ -62,7 +69,8 @@ const NUMBER_WITH_SUFFIX_RE = /^([+-]?)(\d+(?:[.,]\d*)?|[.,]\d+)(.*)$/;
 export function parseQuantity(raw: string, unit: QuantityUnit): QuantityParseResult {
   const trimmed = raw.trim();
   const entries = UNIT_SUFFIXES[unit];
-  const example = `«10» или «10${entries[0].suffix}»`;
+  const baseSuffix = entries.find((entry) => entry.factor === 1)!.suffix;
+  const example = `«10» или «10${baseSuffix}»`;
 
   if (trimmed === '') {
     return { status: 'error', message: `Введите ответ — например, ${example}.` };
@@ -103,15 +111,31 @@ const PREFIX_STEPS: readonly { readonly factor: number; readonly prefix: string 
   { factor: 1e3, prefix: 'к' },
   { factor: 1, prefix: '' },
   { factor: 1e-3, prefix: 'м' },
+  { factor: 1e-6, prefix: 'мк' },
 ];
+
+/** Приставка по порядку величины: выбирается первым подходящим шагом сверху. */
+function prefixStepOf(abs: number): { factor: number; prefix: string } {
+  return PREFIX_STEPS.find((s) => abs >= s.factor) ?? { factor: 1, prefix: '' };
+}
 
 /**
  * Значение в базовой единице → запись с удобной приставкой и русской запятой:
  * 0.0095 А → «9,5 мА», 10500 Ом → «10,5 кОм».
  */
 export function formatQuantity(value: number, unit: QuantityUnit): string {
-  const abs = Math.abs(value);
-  const step = PREFIX_STEPS.find((s) => abs >= s.factor) ?? { factor: 1, prefix: '' };
+  const step = prefixStepOf(Math.abs(value));
   const rounded = Number((value / step.factor).toPrecision(3));
   return `${String(rounded).replace('.', ',')} ${step.prefix}${unit}`;
+}
+
+/**
+ * Диапазон в базовой единице → запись с общей приставкой (по верхней
+ * границе): 0,05–0,1 А → «50–100 мА». Общая приставка не даёт строке
+ * Разбора пестреть разными масштабами одной величины.
+ */
+export function formatQuantityRange(from: number, to: number, unit: QuantityUnit): string {
+  const step = prefixStepOf(Math.max(Math.abs(from), Math.abs(to)));
+  const format = (value: number) => String(Number((value / step.factor).toPrecision(3))).replace('.', ',');
+  return `${format(from)}–${format(to)} ${step.prefix}${unit}`;
 }

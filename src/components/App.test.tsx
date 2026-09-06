@@ -112,3 +112,48 @@ describe('Повтор ошибок внутри Модуля', () => {
     expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
   });
 });
+
+describe('Схема-задание в потоке Курса', () => {
+  it('М1 пройдена → М2: Теория, Вопрос и Схема-задание с «Проверить» — Курс завершается', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    // закрываем М1
+    await enterModule1Tasks(user);
+    await user.click(screen.getByRole('button', { name: 'Ток удвоится' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '0,01');
+    await user.click(screen.getByRole('button', { name: 'Ответить' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'К списку Модулей' }));
+
+    // М2 открылась
+    await user.click(screen.getByRole('button', { name: 'Начать' }));
+
+    // витрина Схема-задания проходит: батарея, выключатель, лампочка
+    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+
+    // разомкнуто — не пройдено; замыкаем — пройдено
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
+  });
+});

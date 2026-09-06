@@ -49,11 +49,56 @@ export interface NumericQuestion {
   readonly solutionSteps: readonly string[];
 }
 
+/** Диапазон измерения в базовой единице (А, В, Ом, Вт), границы включительно. */
+export interface MeasurementRange {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Условие Схема-задания: декларативное измерение по решению Симулятора
+ * или структурное требование («использован светодиод»). Эквивалентные
+ * по физике схемы проходят проверку одинаково — сравнения с эталоном нет
+ * (ADR-0001). Условие-измерение выполнено, если его границам отвечает
+ * хотя бы один Компонент указанного вида.
+ */
+export type CircuitCondition =
+  | {
+      readonly kind: 'component-used';
+      readonly componentKind: ComponentKind;
+      /** Минимум штук; по умолчанию 1. */
+      readonly min?: number;
+      /** Максимум штук; по умолчанию не ограничен. */
+      readonly max?: number;
+    }
+  | {
+      readonly kind: 'current-through';
+      readonly componentKind: ComponentKind;
+      /** Ток через Компонент, А. */
+      readonly range: MeasurementRange;
+    }
+  | {
+      readonly kind: 'voltage-across';
+      readonly componentKind: ComponentKind;
+      /** Напряжение на Компоненте, В. */
+      readonly range: MeasurementRange;
+    }
+  | {
+      readonly kind: 'power-of';
+      readonly componentKind: ComponentKind;
+      /** Мощность на Компоненте, Вт. */
+      readonly range: MeasurementRange;
+    }
+  | {
+      readonly kind: 'component-active';
+      /** Активное состояние: лампочка горит, моторчик крутится. */
+      readonly componentKind: 'lamp' | 'motor';
+      readonly active: boolean;
+    };
+
 /**
  * Схема-задание: ученик собирает схему из Компонентов на Холсте; проверяется
- * Симулятором по измерениям, а не по совпадению с эталоном. Условия-измерения
- * и Диагнозы приходят вместе с Симулятором (тикет 05); Холст для сборки —
- * уже в тикете 04.
+ * Симулятором по измерениям, а не по совпадению с эталоном.
  */
 export interface CircuitTask {
   readonly kind: 'circuit-task';
@@ -61,6 +106,8 @@ export interface CircuitTask {
   readonly prompt: string;
   /** Палитра Задания: Компоненты, доступные ученику на Холсте. */
   readonly palette: readonly ComponentKind[];
+  /** Условия-измерения: все должны выполняться по решению Симулятора. */
+  readonly conditions: readonly CircuitCondition[];
 }
 
 /** Задание — единица работы ученика; виды добавляются по мере Модулей. */

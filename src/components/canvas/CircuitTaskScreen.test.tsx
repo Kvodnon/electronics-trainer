@@ -1,14 +1,17 @@
+import { useState } from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CircuitTask } from '../../domain/task';
 import { module1Palette } from '../../content/m1';
+import { module2 } from '../../content/m2';
+import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
 import { CircuitTaskScreen } from './CircuitTaskScreen';
 
 /**
  * Экран Схема-задания — третий шов (React-компоненты через Testing Library,
- * см. spec: Testing Decisions): все операции редактора проверяются как
- * действия ученика; домен не мокается. Проверки схем нет до тикета 05.
+ * см. spec: Testing Decisions): все операции редактора и проверка «Проверить»
+ * проверяются как действия ученика; домен не мокается.
  */
 
 const demoTask: CircuitTask = {
@@ -16,7 +19,20 @@ const demoTask: CircuitTask = {
   id: 'demo',
   prompt: 'Соберите цепь: батарея, выключатель, лампочка.',
   palette: module1Palette,
+  conditions: [],
 };
+
+/** Рендер только редактора: проверка не участвовала, вердикта нет. */
+function renderTask(task: CircuitTask = demoTask) {
+  return render(
+    <CircuitTaskScreen
+      task={task}
+      evaluation={null}
+      onAnswer={() => undefined}
+      onNext={() => undefined}
+    />,
+  );
+}
 
 /** jsdom не считает layout: сообщаем Холсту его реальный размер (viewBox 800×560). */
 function mockCanvasRect(container: HTMLElement): SVGSVGElement {
@@ -56,7 +72,7 @@ afterEach(cleanup);
 
 describe('Палитра М1', () => {
   it('показывает все Компоненты М1 с обозначениями в ГОСТ', () => {
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
 
     for (const name of ['Батарея', 'Резистор', 'Лампочка', 'Выключатель', 'Ключ', 'Моторчик']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
@@ -73,7 +89,7 @@ describe('Палитра М1', () => {
 describe('Постановка и правка Компонентов', () => {
   it('клик по Палитре ставит Компонент на Холст; клик по нему открывает панель правки', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
 
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
 
@@ -90,7 +106,7 @@ describe('Постановка и правка Компонентов', () => {
 
   it('поворот шагает по 90°: кнопкой и клавишей R (и «к» в русской раскладке)', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Резистор' }));
     const resistor = screen.getByRole('button', { name: 'Резистор 1' });
 
@@ -104,7 +120,7 @@ describe('Постановка и правка Компонентов', () => {
 
   it('номинал правится: 4,5 В через запятую; неверная запись объясняется', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Батарея 1' }));
 
@@ -124,7 +140,7 @@ describe('Постановка и правка Компонентов', () => {
 
   it('выключатель замыкается галочкой в панели правки', async () => {
     const user = userEvent.setup();
-    const { container } = render(<CircuitTaskScreen task={demoTask} />);
+    const { container } = renderTask();
     await user.click(screen.getByRole('button', { name: 'Выключатель' }));
     await user.click(screen.getByRole('button', { name: 'Выключатель 1' }));
 
@@ -137,7 +153,7 @@ describe('Постановка и правка Компонентов', () => {
 
   it('удаление Компонента убирает и его Провода (кнопкой и клавишей Delete)', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
@@ -160,7 +176,7 @@ describe('Постановка и правка Компонентов', () => {
 describe('Провода', () => {
   it('Провод тянется кликом по выводам: от батареи к лампочке', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
 
@@ -175,7 +191,7 @@ describe('Провода', () => {
 
   it('Esc отменяет начатый Провод', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
 
@@ -190,7 +206,7 @@ describe('Провода', () => {
 
   it('Провод выбирается кликом и удаляется кнопкой', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
@@ -205,7 +221,7 @@ describe('Провода', () => {
 
   it('при перемещении Компонента Провод перерисовывается, соединение не рвётся', async () => {
     const user = userEvent.setup();
-    const { container } = render(<CircuitTaskScreen task={demoTask} />);
+    const { container } = renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
@@ -229,7 +245,7 @@ describe('Провода', () => {
 describe('Undo/redo и сброс', () => {
   it('отмена и возврат покрывают постановку, Провод и поворот', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     const undo = screen.getByRole('button', { name: 'Отменить' });
     const redo = screen.getByRole('button', { name: 'Вернуть' });
     expect(undo).toBeDisabled();
@@ -264,7 +280,7 @@ describe('Undo/redo и сброс', () => {
 
   it('Сбросить схему очищает Холст; сброс тоже отменяется', async () => {
     const user = userEvent.setup();
-    render(<CircuitTaskScreen task={demoTask} />);
+    renderTask();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Моторчик' }));
     expect(screen.getByRole('button', { name: 'Батарея 1' })).toBeInTheDocument();
@@ -275,5 +291,119 @@ describe('Undo/redo и сброс', () => {
 
     await user.click(screen.getByRole('button', { name: 'Отменить' }));
     expect(screen.getByRole('button', { name: 'Батарея 1' })).toBeInTheDocument();
+  });
+});
+
+describe('Кнопка «Проверить»', () => {
+  /** Задание: батарея и лампочка, лампочка горит, ток 50–100 мА. */
+  const litTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'lit',
+    prompt: 'Соберите цепь: батарея и лампочка, лампочка должна гореть.',
+    palette: module1Palette,
+    conditions: [
+      { kind: 'component-used', componentKind: 'battery' },
+      { kind: 'component-used', componentKind: 'lamp' },
+      { kind: 'current-through', componentKind: 'lamp', range: { from: 0.05, to: 0.1 } },
+      { kind: 'component-active', componentKind: 'lamp', active: true },
+    ],
+  };
+
+  /**
+   * Обвязка как в ModuleScreen: ответ хранит родитель, вердикт считает
+   * домен. Проверяется экран целиком, без моков.
+   */
+  function renderCheckableTask(task: CircuitTask) {
+    const onNext = vi.fn();
+    function Harness() {
+      const [answer, setAnswer] = useState<Answer | null>(null);
+      const evaluation = answer !== null ? evaluate(task, answer) : null;
+      return (
+        <CircuitTaskScreen
+          task={task}
+          evaluation={evaluationOfKind(evaluation, 'circuit-task')}
+          onAnswer={setAnswer}
+          onNext={onNext}
+        />
+      );
+    }
+    render(<Harness />);
+    return onNext;
+  }
+
+  /** Ставит батарею и лампочку и соединяет их в контур. */
+  async function assembleLampLoop(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 2' }));
+  }
+
+  it('простейшая цепь → «Проверить» → «Пройдено» с Разбором по расчёту', async () => {
+    const user = userEvent.setup();
+    const onNext = renderCheckableTask(litTask);
+    await assembleLampLoop(user);
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    // Разбор построен на вычисленном токе и границах условия
+    expect(screen.getByText(/Ток через лампочку — 74,9 мА, в границах условия \(50–100 мА\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Лампочка горит/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('разорванная цепь → «Не пройдено»; после правки вердикт снимается и схема проходит', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(litTask);
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    // только один Провод — контур не замкнут
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Лампочка не горит: мощность 0 Вт/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Дальше' })).not.toBeInTheDocument();
+
+    // ученик достраивает контур — устаревший вердикт исчезает
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 2' }));
+    expect(screen.queryByText('Не пройдено')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+  });
+
+  it('витрина М2 из настоящего контента проходит: батарея, выключатель, лампочка, выключатель замкнут', async () => {
+    const user = userEvent.setup();
+    const m2Demo = module2.tasks.find((task) => task.kind === 'circuit-task') as CircuitTask;
+    renderCheckableTask(m2Demo);
+
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Выключатель 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+
+    // разомкнутый выключатель — лампочка не горит
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+
+    // замыкаем — схема проходит по условию
+    await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
+    await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Выключатель на схеме: 1 шт/)).toBeInTheDocument();
   });
 });
