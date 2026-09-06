@@ -1,12 +1,12 @@
 /**
  * Хранение Прогресса между сессиями (localStorage). Это слой с побочными
- * эффектами — домен остаётся чистым и о хранилище не знает.
+ * эффектами — домен остаётся чистым и о хранилище не знает. Проверки формы
+ * данных общие с импортом файла: src/domain/backup.ts.
  */
-import type { CourseProgress, TaskState } from '../domain/course';
+import { isCourseProgress } from '../domain/backup';
+import type { CourseProgress } from '../domain/course';
 
 const STORAGE_KEY = 'electronics-trainer.progress.v1';
-
-const VALID_TASK_STATES: readonly TaskState[] = ['not-started', 'passed', 'returned-for-retry'];
 
 /**
  * Читает Прогресс из хранилища. Любая беда — мусор вместо JSON, чужая
@@ -30,7 +30,7 @@ export function loadProgress(): CourseProgress | null {
   } catch {
     return null;
   }
-  if (!isProgress(parsed)) return null;
+  if (!isCourseProgress(parsed)) return null;
   return { taskStates: parsed.taskStates, failedOnce: parsed.failedOnce ?? {} };
 }
 
@@ -41,21 +41,4 @@ export function saveProgress(progress: CourseProgress): void {
   } catch {
     // квота или закрытый доступ: Прогресс живёт до перезагрузки страницы
   }
-}
-
-function isProgress(value: unknown): value is CourseProgress {
-  if (typeof value !== 'object' || value === null) return false;
-  const { taskStates, failedOnce } = value as { taskStates?: unknown; failedOnce?: unknown };
-  if (typeof taskStates !== 'object' || taskStates === null || Array.isArray(taskStates)) {
-    return false;
-  }
-  if (!Object.values(taskStates).every((state) => VALID_TASK_STATES.includes(state as TaskState))) {
-    return false;
-  }
-  // failedOnce появился позже сохранений первой версии: отсутствие — «чисто»
-  if (failedOnce === undefined) return true;
-  if (typeof failedOnce !== 'object' || failedOnce === null || Array.isArray(failedOnce)) {
-    return false;
-  }
-  return Object.values(failedOnce).every((mark) => mark === true);
 }

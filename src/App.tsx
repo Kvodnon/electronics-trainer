@@ -1,21 +1,27 @@
 import { useEffect, useReducer, useState } from 'react';
 import { CourseScreen } from './components/CourseScreen';
+import { DataControls } from './components/DataControls';
 import { ModuleScreen } from './components/ModuleScreen';
 import { SandboxScreen } from './components/SandboxScreen';
 import { course } from './content/course';
 import { emptyProgress, progressReducer, sandboxPaletteOf } from './domain/course';
 import { removeCircuit, upsertCircuit } from './domain/sandbox';
+import { serializeBackup, type BackupData } from './domain/backup';
 import type { CanvasState } from './domain/canvas';
 import { defaultSymbolStandard, type SymbolStandard } from './domain/symbols';
 import { loadProgress, saveProgress } from './storage/progressStorage';
 import { loadSandboxCircuits, saveSandboxCircuits } from './storage/sandboxStorage';
+import { downloadTextFile } from './storage/fileTransfer';
 import { loadSymbolStandard, saveSymbolStandard } from './storage/symbolStandardStorage';
 
+/** Имя файла экспорта: Прогресс и схемы Песочницы одним снимком. */
+const BACKUP_FILENAME = 'electronics-trainer-backup.json';
+
 /**
- * Каркас Тренажёра: экран Курса (с входом в Песочницу) ↔ экран Модуля
- * (Теория → Задания). Прогресс, схемы Песочницы и выбранный стандарт
- * обозначений живут в редьюсере/состоянии и автоматически сохраняются
- * между сессиями — перезагрузка страницы ничего не теряет.
+ * Каркас Тренажёра: экран Курса (с входом в Песочницу и разделом «Данные») ↔
+ * экран Модуля (Теория → Задания). Прогресс, схемы Песочницы и выбранный
+ * стандарт обозначений живут в редьюсере/состоянии и автоматически
+ * сохраняются между сессиями — перезагрузка страницы ничего не теряет.
  */
 export function App() {
   const [progress, dispatch] = useReducer(progressReducer, null, () => {
@@ -52,6 +58,19 @@ export function App() {
     setCircuits((current) => removeCircuit(current, circuitId));
   }
 
+  function handleExport() {
+    downloadTextFile(BACKUP_FILENAME, serializeBackup({ progress, circuits }));
+  }
+
+  function handleImport(data: BackupData) {
+    dispatch({ type: 'progress-restored', progress: data.progress });
+    setCircuits(data.circuits);
+  }
+
+  function handleReset() {
+    dispatch({ type: 'progress-reset' });
+  }
+
   const module =
     moduleId === null ? null : (course.modules.find((m) => m.id === moduleId) ?? null);
 
@@ -84,12 +103,19 @@ export function App() {
             onExit={() => setModuleId(null)}
           />
         ) : (
-          <CourseScreen
-            course={course}
-            progress={progress}
-            onEnterModule={setModuleId}
-            onOpenSandbox={() => setSandboxOpen(true)}
-          />
+          <>
+            <CourseScreen
+              course={course}
+              progress={progress}
+              onEnterModule={setModuleId}
+              onOpenSandbox={() => setSandboxOpen(true)}
+            />
+            <DataControls
+              onExport={handleExport}
+              onImport={handleImport}
+              onReset={handleReset}
+            />
+          </>
         )}
       </main>
     </div>

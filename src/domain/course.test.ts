@@ -99,6 +99,29 @@ describe('Прогресс: состояния Заданий', () => {
   });
 });
 
+describe('Прогресс: сброс и восстановление', () => {
+  it('«начать заново» возвращает пустой Прогресс', () => {
+    const progress = progressReducer(passed('m1-a'), {
+      type: 'task-returned-for-retry',
+      taskId: 'm1-b',
+    });
+    const after = progressReducer(progress, { type: 'progress-reset' });
+    expect(after).toEqual(emptyProgress);
+  });
+
+  it('импортированный Прогресс заменяет текущий целиком', () => {
+    const imported: CourseProgress = {
+      taskStates: { 'm2-x': 'passed', 'm2-y': 'returned-for-retry' },
+      failedOnce: { 'm2-y': true },
+    };
+    const after = progressReducer(passed('m1-a'), { type: 'progress-restored', progress: imported });
+    expect(after).toBe(imported);
+    expect(taskStateOf(after, 'm1-a')).toBe('not-started');
+    expect(solvedOnFirstAttemptOf(after, 'm2-x')).toBe(true);
+    expect(taskStateOf(after, 'm2-y')).toBe('returned-for-retry');
+  });
+});
+
 describe('Прогресс Модуля', () => {
   it('считает пройденные Задания и завершённость', () => {
     const progress = passed('m1-a');

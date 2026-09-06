@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
+import { parseBackup } from '../domain/backup';
+import { stubDownload } from '../testing/fileDownload';
 import {
   closeSwitch,
   enterModule1Tasks,
@@ -10,7 +12,8 @@ import {
 } from '../testing/navigation';
 // Курс, Теория и Прогресс — по настоящим данным приложения, домен не мокается.
 // «Перезагрузка страницы» моделируется размонтированием и новым рендером App:
-// Прогресс восстанавливается из localStorage.
+// Прогресс восстанавливается из localStorage. Скачивание файла перехватывает
+// заглушка из src/testing — содержимое при этом настоящий Blob.
 
 describe('Экран Курса', () => {
   it('показывает Модули с Прогрессом; следующий lockedButton', () => {
@@ -365,5 +368,146 @@ describe('Песочница', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+  });
+});
+
+function backupFile(content: string): File {
+  return new File([content], 'electronics-trainer-backup.json', { type: 'application/json' });
+}
+
+/** Прогресс с попыткой на повторе и одна схема Песочницы — состояние для переноса. */
+function seedProgressAndCircuit() {
+  window.localStorage.setItem(
+    'electronics-trainer.progress.v1',
+    JSON.stringify({
+      taskStates: { 'm1-ohm-01': 'passed', 'm1-ohm-02': 'returned-for-retry' },
+      failedOnce: { 'm1-ohm-02': true },
+    }),
+  );
+  window.localStorage.setItem(
+    'electronics-trainer.sandbox.v1',
+    JSON.stringify([
+      {
+        id: 's1',
+        name: 'Кольцо',
+        canvas: {
+          components: [{ id: 'c1', kind: 'battery', x: 100, y: 100, rotation: 0, voltage: 4.5 }],
+          wires: [],
+        },
+      },
+    ]),
+  );
+}
+
+describe('Данные: экспорт, импорт и сброс', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('экспорт скачивает файл с Прогрессом и схемами Песочницы', async () => {
+    seedProgressAndCircuit();
+    const user = userEvent.setup();
+    render(<App />);
+    const download = stubDownload();
+
+    await user.click(screen.getByRole('button', { name: 'Экспорт в файл' }));
+    download.restore();
+
+    expect(download.files).toHaveLength(1);
+    expect(download.files[0].name).toBe('electronics-trainer-backup.json');
+    const parsed = parseBackup(await download.files[0].text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.data.progress.taskStates).toEqual({
+      'm1-ohm-01': 'passed',
+      'm1-ohm-02': 'returned-for-retry',
+    });
+    expect(parsed.data.progress.failedOnce).toEqual({ 'm1-ohm-02': true });
+    expect(parsed.data.circuits.map((circuit) => circuit.name)).toEqual(['Кольцо']);
+  });
+
+  it('импорт после «переустановки» восстанавливает Прогресс и схемы', async () => {
+    seedProgressAndCircuit();
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    const download = stubDownload();
+    await user.click(screen.getByRole('button', { name: 'Экспорт в файл' }));
+    download.restore();
+    const content = await download.files[0].text;
+    firstRender.unmount();
+
+    // Переустановка системы или новый браузер: хранилище пусто
+    window.localStorage.clear();
+    const secondRender = render(<App />);
+    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+
+    await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
+    expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
+
+    // Прогресс Курса вернулся, М2 снова закрыта до поры
+    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Продолжить' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+
+    // Схема Песочницы вернулась и переживает следующую перезагрузку
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+    secondRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+  });
+
+  it('битый файл отклоняется с объяснением, текущие данные не тронуты', async () => {
+    seedProgressAndCircuit();
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.upload(screen.getByLabelText('Файл импорта'), backupFile('{не json'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('не удаётся прочитать JSON');
+
+    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+  });
+
+  it('чужой файл отклоняется: приложение называет причину', async () => {
+    render(<App />);
+    const user = userEvent.setup();
+
+    await user.upload(
+      screen.getByLabelText('Файл импорта'),
+      backupFile(JSON.stringify({ hello: 'мир' })),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('не файл Тренажёра');
+  });
+
+  it('«Начать заново» стирает Прогресс после подтверждения, схемы остаются', async () => {
+    seedProgressAndCircuit();
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    // Без подтверждения ничего не стирается
+    await user.click(screen.getByRole('button', { name: 'Начать заново' }));
+    expect(screen.getByText(/Удалить весь Прогресс/)).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Отмена' }));
+    expect(screen.getByText('Заданий пройдено: 1 из 3')).toBeInTheDocument();
+
+    // Подтверждение — Прогресс обнуляется, схема Песочницы выживает
+    await user.click(screen.getByRole('button', { name: 'Начать заново' }));
+    await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
+    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Открыть' }));
+    expect(screen.getByText('Кольцо')).toBeInTheDocument();
+
+    // Пустой Прогресс переживает перезагрузку
+    firstRender.unmount();
+    render(<App />);
+    expect(screen.getAllByText('Заданий пройдено: 0 из 3')).toHaveLength(2);
   });
 });

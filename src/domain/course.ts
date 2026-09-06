@@ -11,11 +11,13 @@ import type { CircuitTask, Task } from './task';
  */
 export type TaskState = 'not-started' | 'passed' | 'returned-for-retry';
 
-/** Действие ученика, меняющее Прогресс. */
+/** Действие ученика (или самого Тренажёра), меняющее Прогресс. */
 export type CourseAction =
   | { readonly type: 'task-passed'; readonly taskId: string }
   | { readonly type: 'task-returned-for-retry'; readonly taskId: string }
-  | { readonly type: 'attempt-failed'; readonly taskId: string };
+  | { readonly type: 'attempt-failed'; readonly taskId: string }
+  | { readonly type: 'progress-reset' }
+  | { readonly type: 'progress-restored'; readonly progress: CourseProgress };
 
 /** Прогресс — состояние прохождения Курса: какие Задания пройдены. */
 export interface CourseProgress {
@@ -52,6 +54,13 @@ export function progressReducer(progress: CourseProgress, action: CourseAction):
       if (progress.failedOnce[action.taskId]) return progress;
       return { ...progress, failedOnce: markFailedOnce(progress, action.taskId) };
     }
+    case 'progress-reset':
+      // «Начать заново»: чистый лист Курса. Схемы Песочницы — не Прогресс,
+      // редьюсер их не касается.
+      return emptyProgress;
+    case 'progress-restored':
+      // Импорт файла данных: Прогресс заменяется снимком из файла целиком.
+      return action.progress;
   }
 }
 
