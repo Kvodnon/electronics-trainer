@@ -2,8 +2,14 @@ import { useReducer, useMemo, useState } from 'react';
 import type { CircuitTask } from '../../domain/task';
 import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canvas';
 import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
-import { solveDc, wireCurrents, type ComponentReading } from '../../domain/simulator';
-import { CanvasEditor, type CanvasOverlay, type FaultSpot } from './CanvasEditor';
+import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
+import {
+  readingsByComponent,
+  solveDc,
+  wireCurrents,
+  type ComponentReading,
+} from '../../domain/simulator';
+import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
@@ -31,7 +37,7 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
   /** Живое поведение схемы: пересчёт на каждое изменение Холста. */
   const liveReadings = useMemo(() => {
     try {
-      return new Map(solveDc(history.present).readings.map((reading) => [reading.componentId, reading]));
+      return readingsByComponent(solveDc(history.present));
     } catch {
       return new Map<string, ComponentReading>();
     }
@@ -41,16 +47,14 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
   const overlay = useMemo<CanvasOverlay | null>(() => {
     if (shownEvaluation === null || !showReadings) return null;
     return {
-      componentReadings: new Map(
-        shownEvaluation.solution.readings.map((reading) => [reading.componentId, reading]),
-      ),
+      componentReadings: readingsByComponent(shownEvaluation.solution),
       wireCurrents: new Map(
         wireCurrents(history.present, shownEvaluation.solution).map((entry) => [entry.wireId, entry.current]),
       ),
     };
   }, [shownEvaluation, showReadings, history.present]);
 
-  const faultSpot: FaultSpot | null =
+  const faultSpot: CircuitDiagnosisSpot | null =
     shownEvaluation?.diagnoses.find((diagnosis) => diagnosis.spot !== null)?.spot ?? null;
 
   function check() {

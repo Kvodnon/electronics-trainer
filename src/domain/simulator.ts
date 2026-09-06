@@ -11,7 +11,7 @@
  * - выключатель и ключ — замкнутый контакт с малым, разомкнутый с огромным
  *   сопротивлением: обрыв честно даёт ток ≈ 0, не ломая решение.
  */
-import type { CanvasState, ComponentKind, PlacedComponent } from './canvas';
+import { pinKey, type CanvasState, type ComponentKind, type PlacedComponent } from './canvas';
 
 /** Внутреннее сопротивление батареи, Ом (поведенческая модель М1). */
 export const BATTERY_INTERNAL_RESISTANCE = 0.1;
@@ -55,6 +55,11 @@ export function readingsOfKind(solution: DcSolution, kind: ComponentKind): reado
   return solution.readings.filter((reading) => reading.kind === kind);
 }
 
+/** Показания по идентификатору Компонента — для живого поведения и оверлея. */
+export function readingsByComponent(solution: DcSolution): ReadonlyMap<string, ComponentReading> {
+  return new Map(solution.readings.map((reading) => [reading.componentId, reading]));
+}
+
 /**
  * Показание Провода для оверлея токов: Провод — часть узла Симулятора, его ток
  * восстанавливается по ветви Компонента на конце Провода. Это честно, только
@@ -70,7 +75,7 @@ export interface WireCurrent {
 export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonly WireCurrent[] {
   const wiresPerPin = new Map<string, number>();
   const touch = (ref: { readonly componentId: string; readonly pin: number }): void => {
-    const key = `${ref.componentId}:${ref.pin}`;
+    const key = pinKey(ref.componentId, ref.pin);
     wiresPerPin.set(key, (wiresPerPin.get(key) ?? 0) + 1);
   };
   for (const wire of canvas.wires) {
@@ -80,7 +85,7 @@ export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonl
 
   return canvas.wires.map((wire) => {
     const alone = (ref: { readonly componentId: string; readonly pin: number }): boolean =>
-      wiresPerPin.get(`${ref.componentId}:${ref.pin}`) === 1;
+      wiresPerPin.get(pinKey(ref.componentId, ref.pin)) === 1;
     const component = canvas.components.find((candidate) => candidate.id === wire.from.componentId);
     if (component === undefined || !alone(wire.from) || !alone(wire.to)) {
       return { wireId: wire.id, current: null };
@@ -178,13 +183,13 @@ export function solveDc(canvas: CanvasState): DcSolution {
   const pinSets = new DisjointSet();
   for (const wire of canvas.wires) {
     if (!knownIds.has(wire.from.componentId) || !knownIds.has(wire.to.componentId)) continue;
-    pinSets.union(`${wire.from.componentId}:${wire.from.pin}`, `${wire.to.componentId}:${wire.to.pin}`);
+    pinSets.union(pinKey(wire.from.componentId, wire.from.pin), pinKey(wire.to.componentId, wire.to.pin));
   }
 
   // Узлы нумеруются по порядку первого упоминания
   const nodeIndex = new Map<string, number>();
   const nodeOf = (componentId: string, pin: number): number => {
-    const root = pinSets.find(`${componentId}:${pin}`);
+    const root = pinSets.find(pinKey(componentId, pin));
     let index = nodeIndex.get(root);
     if (index === undefined) {
       index = nodeIndex.size;

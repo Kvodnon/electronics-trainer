@@ -24,6 +24,7 @@ import {
 import { CanvasSymbolBody, PaletteSymbol, componentTitles, componentValueLabel } from './CanvasSymbols';
 import { CanvasSelectionPanel } from './CanvasSelectionPanel';
 import { formatQuantity } from '../../domain/quantity';
+import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import type { ComponentReading } from '../../domain/simulator';
 
 /** Радиус зоны захвата символа Компонента мышью. */
@@ -56,12 +57,6 @@ interface WireDraftState {
   readonly cursor: Point;
 }
 
-/** Место ошибки из Диагноза: Компонент или Провод для подсветки. */
-export interface FaultSpot {
-  readonly kind: 'component' | 'wire';
-  readonly id: string;
-}
-
 /** Оверлей расчёта: показания на Компонентах и токи Проводов после «Проверить». */
 export interface CanvasOverlay {
   readonly componentReadings: ReadonlyMap<string, ComponentReading>;
@@ -79,7 +74,7 @@ interface CanvasEditorProps {
   /** Числовой оверлей токов и напряжений; нет — слой не рисуется. */
   readonly overlay?: CanvasOverlay | null;
   /** Подсветка места ошибки из Диагноза. */
-  readonly faultSpot?: FaultSpot | null;
+  readonly faultSpot?: CircuitDiagnosisSpot | null;
 }
 
 export function CanvasEditor({ palette, history, onAction, actions, liveReadings, overlay, faultSpot }: CanvasEditorProps) {
@@ -347,8 +342,7 @@ export function CanvasEditor({ palette, history, onAction, actions, liveReadings
           );
         })}
 
-        {overlay !== null &&
-          overlay !== undefined &&
+        {overlay &&
           canvas.wires.map((wire) => {
             const current = overlay.wireCurrents.get(wire.id);
             if (current === undefined || current === null) return null;
@@ -408,8 +402,7 @@ export function CanvasEditor({ palette, history, onAction, actions, liveReadings
           </text>
         ))}
 
-        {overlay !== null &&
-          overlay !== undefined &&
+        {overlay &&
           components.map((component) => {
             const reading = overlay.componentReadings.get(component.id);
             if (reading === undefined) return null;

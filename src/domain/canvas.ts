@@ -42,6 +42,11 @@ export interface PinRef {
   readonly pin: number;
 }
 
+/** Ключ вывода в словарях домена: один формат для Симулятора, Диагнозов и оверлея. */
+export function pinKey(componentId: string, pin: number): string {
+  return `${componentId}:${pin}`;
+}
+
 /** Провод: соединение двух выводов Компонентов. */
 export interface Wire {
   readonly id: string;

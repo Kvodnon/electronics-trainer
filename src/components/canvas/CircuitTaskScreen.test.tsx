@@ -478,6 +478,20 @@ describe('Диагноз и подсветка места ошибки', () => {
     expect(document.querySelector('.fault-ring')).not.toBeNull();
   });
 
+  it('перемычка между полюсами батареи → КЗ, подсвечен Провод-виновник', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(litTask);
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText(/Короткое замыкание/)).toBeInTheDocument();
+    const wire = screen.getByRole('button', { name: 'Провод w1' });
+    expect(wire.getAttribute('class')).toContain('wire-fault');
+  });
+
   it('«работает, но не по условию» — отдельное слово вердикта, не «Пройдено» и не «Не пройдено»', async () => {
     const user = userEvent.setup();
     renderCheckableTask(litTask);

@@ -6,6 +6,7 @@
  * указывает место ошибки на схеме для подсветки. Чистый TypeScript без DOM.
  */
 import type { CanvasState } from './canvas';
+import { pinKey } from './canvas';
 import { formatQuantity, formatQuantityRange } from './quantity';
 import { COMPONENT_LEXIS } from './componentLexis';
 import { readingsOfKind, type DcSolution } from './simulator';
@@ -77,16 +78,28 @@ function findShortCircuit(canvas: CanvasState, solution: DcSolution): CircuitDia
       emf > 0 &&
       Math.abs(battery.current) >= SHORT_CIRCUIT_MIN_CURRENT &&
       Math.abs(battery.voltage) <= emf * SHORT_CIRCUIT_VOLTAGE_FRACTION;
-    if (shorted) {
-      return {
-        kind: 'short-circuit',
-        text:
-          `Короткое замыкание: через батарею идёт ток ${formatQuantity(Math.abs(battery.current), 'А')} ` +
-          `при напряжении на зажимах всего ${formatQuantity(Math.abs(battery.voltage), 'В')} — ` +
-          'полюса соединены накоротко. Найдите перемычку между «плюсом» и «минусом» и уберите её.',
-        spot: { kind: 'component', id: battery.componentId },
-      };
-    }
+    if (!shorted) continue;
+    // перемычка прямо между полюсами — виновник; без неё подсвечиваем батарею
+    const jumper = canvas.wires.find(
+      (wire) =>
+        wire.from.componentId === battery.componentId &&
+        wire.to.componentId === battery.componentId &&
+        wire.from.pin !== wire.to.pin,
+    );
+    const where =
+      jumper !== undefined
+        ? 'Этот Провод соединяет полюса батареи накоротко. Удалите перемычку.'
+        : 'Полюса батареи замкнуты накоротко через цепь Проводов. Найдите перемычку и уберите её.';
+    return {
+      kind: 'short-circuit',
+      text:
+        `Короткое замыкание: через батарею идёт ток ${formatQuantity(Math.abs(battery.current), 'А')} ` +
+        `при напряжении на зажимах всего ${formatQuantity(Math.abs(battery.voltage), 'В')}. ${where}`,
+      spot:
+        jumper !== undefined
+          ? { kind: 'wire', id: jumper.id }
+          : { kind: 'component', id: battery.componentId },
+    };
   }
   return null;
 }
@@ -159,11 +172,11 @@ function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiag
 function firstWithUnconnectedPin(canvas: CanvasState): string | null {
   const connectedPins = new Set<string>();
   for (const wire of canvas.wires) {
-    connectedPins.add(`${wire.from.componentId}:${wire.from.pin}`);
-    connectedPins.add(`${wire.to.componentId}:${wire.to.pin}`);
+    connectedPins.add(pinKey(wire.from.componentId, wire.from.pin));
+    connectedPins.add(pinKey(wire.to.componentId, wire.to.pin));
   }
   const hasFreePin = (componentId: string): boolean =>
-    !connectedPins.has(`${componentId}:0`) || !connectedPins.has(`${componentId}:1`);
+    !connectedPins.has(pinKey(componentId, 0)) || !connectedPins.has(pinKey(componentId, 1));
   const load = canvas.components.find((component) => component.kind !== 'battery' && hasFreePin(component.id));
   if (load !== undefined) return load.id;
   const battery = canvas.components.find((component) => component.kind === 'battery' && hasFreePin(component.id));
