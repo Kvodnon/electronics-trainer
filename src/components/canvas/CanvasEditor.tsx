@@ -23,6 +23,8 @@ import {
 } from '../../domain/canvasGeometry';
 import { CanvasSymbolBody, PaletteSymbol, componentTitles, componentValueLabel } from './CanvasSymbols';
 import { CanvasSelectionPanel } from './CanvasSelectionPanel';
+import { formatQuantity } from '../../domain/quantity';
+import type { ComponentReading } from '../../domain/simulator';
 
 /** Радиус зоны захвата символа Компонента мышью. */
 const COMPONENT_HIT_RADIUS = 34;
@@ -54,15 +56,33 @@ interface WireDraftState {
   readonly cursor: Point;
 }
 
+/** Место ошибки из Диагноза: Компонент или Провод для подсветки. */
+export interface FaultSpot {
+  readonly kind: 'component' | 'wire';
+  readonly id: string;
+}
+
+/** Оверлей расчёта: показания на Компонентах и токи Проводов после «Проверить». */
+export interface CanvasOverlay {
+  readonly componentReadings: ReadonlyMap<string, ComponentReading>;
+  readonly wireCurrents: ReadonlyMap<string, number | null>;
+}
+
 interface CanvasEditorProps {
   readonly palette: readonly ComponentKind[];
   readonly history: CanvasHistory;
   readonly onAction: (action: CanvasAction) => void;
   /** Кнопки Задания в панели редактора — например, «Проверить». */
   readonly actions?: ReactNode;
+  /** Живые показания Симулятора: лампочка светится, моторчик вращается. */
+  readonly liveReadings?: ReadonlyMap<string, ComponentReading>;
+  /** Числовой оверлей токов и напряжений; нет — слой не рисуется. */
+  readonly overlay?: CanvasOverlay | null;
+  /** Подсветка места ошибки из Диагноза. */
+  readonly faultSpot?: FaultSpot | null;
 }
 
-export function CanvasEditor({ palette, history, onAction, actions }: CanvasEditorProps) {
+export function CanvasEditor({ palette, history, onAction, actions, liveReadings, overlay, faultSpot }: CanvasEditorProps) {
   const canvas = history.present;
   const [selection, setSelection] = useState<Selection>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
@@ -309,10 +329,11 @@ export function CanvasEditor({ palette, history, onAction, actions }: CanvasEdit
           const route = routeWire(wireFrom(wire.from), wireFrom(wire.to));
           const points = route.map((point) => `${point.x},${point.y}`).join(' ');
           const selected = selection?.kind === 'wire' && selection.id === wire.id;
+          const fault = faultSpot?.kind === 'wire' && faultSpot.id === wire.id;
           return (
             <g
               key={wire.id}
-              className={`wire ${selected ? 'wire-selected' : ''}`}
+              className={`wire ${selected ? 'wire-selected' : ''} ${fault ? 'wire-fault' : ''}`}
               role="button"
               aria-label={`Провод ${wire.id}`}
               onClick={(event) => {
@@ -326,6 +347,27 @@ export function CanvasEditor({ palette, history, onAction, actions }: CanvasEdit
           );
         })}
 
+        {overlay !== null &&
+          overlay !== undefined &&
+          canvas.wires.map((wire) => {
+            const current = overlay.wireCurrents.get(wire.id);
+            if (current === undefined || current === null) return null;
+            const route = routeWire(wireFrom(wire.from), wireFrom(wire.to));
+            const middle = routeMidpoint(route);
+            return (
+              <text
+                key={`${wire.id}:reading`}
+                className="canvas-wire-reading"
+                x={middle.x}
+                y={middle.y - 6}
+                textAnchor="middle"
+                aria-hidden="true"
+              >
+                {formatQuantity(Math.abs(current), 'А')}
+              </text>
+            );
+          })}
+
         {wireDraft !== null && components.some((c) => c.id === wireDraft.from.componentId) && (
           <DraftWire draft={wireDraft} from={wireFrom(wireDraft.from)} />
         )}
@@ -333,12 +375,13 @@ export function CanvasEditor({ palette, history, onAction, actions }: CanvasEdit
         {components.map((component) => {
           const shown = withDrag(component);
           const selected = selection?.kind === 'component' && selection.id === component.id;
+          const fault = faultSpot?.kind === 'component' && faultSpot.id === component.id;
           return (
             <g
               key={component.id}
               className={`canvas-component ${selected ? 'canvas-component-selected' : ''} ${
                 drag !== null && drag.componentId === component.id ? 'canvas-component-dragged' : ''
-              }`}
+              } ${fault ? 'canvas-component-fault' : ''}`}
               role="button"
               aria-label={componentName(component.id)}
               transform={`translate(${shown.x} ${shown.y}) rotate(${component.rotation})`}
@@ -346,8 +389,9 @@ export function CanvasEditor({ palette, history, onAction, actions }: CanvasEdit
             >
               <circle className="canvas-component-hit" r={COMPONENT_HIT_RADIUS} />
               <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                <CanvasSymbolBody component={component} />
+                <CanvasSymbolBody component={component} reading={liveReadings?.get(component.id)} />
               </g>
+              {fault && <circle className="fault-ring" r={46} aria-hidden="true" />}
             </g>
           );
         })}
@@ -363,6 +407,29 @@ export function CanvasEditor({ palette, history, onAction, actions }: CanvasEdit
             {componentValueLabel(component)}
           </text>
         ))}
+
+        {overlay !== null &&
+          overlay !== undefined &&
+          components.map((component) => {
+            const reading = overlay.componentReadings.get(component.id);
+            if (reading === undefined) return null;
+            const shown = withDrag(component);
+            return (
+              <text
+                key={`${component.id}:reading`}
+                className="canvas-component-reading"
+                x={shown.x}
+                y={shown.y + 42}
+                textAnchor="middle"
+                aria-hidden="true"
+              >
+                <tspan className="canvas-reading-current">{formatQuantity(Math.abs(reading.current), 'А')}</tspan>
+                <tspan className="canvas-reading-voltage" dx={8}>
+                  {formatQuantity(Math.abs(reading.voltage), 'В')}
+                </tspan>
+              </text>
+            );
+          })}
 
         {components.map((component) =>
           [0, 1].map((pin) => {
@@ -421,4 +488,13 @@ function DraftWire({ draft, from }: { draft: WireDraftState; from: DirectedPoint
   const route = routeWire(from, { x: draft.cursor.x, y: draft.cursor.y, dx: 0, dy: 0 });
   const points = route.map((point) => `${point.x},${point.y}`).join(' ');
   return <polyline className="wire-draft" points={points} />;
+}
+
+/** Точка на маршруте для подписи тока: середина среднего сегмента. */
+function routeMidpoint(route: readonly Point[]): Point {
+  const middle = Math.floor(route.length / 2);
+  if (route.length % 2 === 1) return route[middle];
+  const a = route[middle - 1];
+  const b = route[middle];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }

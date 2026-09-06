@@ -5,9 +5,11 @@ import {
   BATTERY_INTERNAL_RESISTANCE,
   isLampLit,
   isMotorSpinning,
+  lampBrightness,
   readingOf,
   readingsOfKind,
   solveDc,
+  wireCurrents,
 } from './simulator';
 
 // Golden-тесты решателя (spec: Testing Decisions): эталонные схемы с известными
@@ -177,8 +179,7 @@ describe('solveDc: коммутация и поведенческие состо
   });
 });
 
-describe('solveDc: устойчивость к вырожденным схемам', () => {
-  it('остров без источника: токи 0, решение не падает', () => {
+describe('solveDc: устойчивость к вырожденным схемам', () => {  it('остров без источника: токи 0, решение не падает', () => {
     const canvas = canvasOf(
       [component('r1', 'resistor'), component('r2', 'resistor')],
       [wire('w1', pin('r1', 0), pin('r2', 0)), wire('w2', pin('r1', 1), pin('r2', 1))],
@@ -229,5 +230,67 @@ describe('solveDc: устойчивость к вырожденным схема
     const lamps = readingsOfKind(solveDc(canvas), 'lamp');
     expect(lamps).toHaveLength(2);
     for (const lamp of lamps) expectCloseTo(lamp.current, 9 / 120);
+  });
+});
+
+describe('wireCurrents: оверлей токов Проводов', () => {
+  it('последовательная цепь: ток каждого Провода равен току контура', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('lamp1', 'lamp')],
+      [wire('w1', pin('b', 0), pin('lamp1', 0)), wire('w2', pin('lamp1', 1), pin('b', 1))],
+    );
+    const solution = solveDc(canvas);
+    const lampCurrent = readingOf(solution, 'lamp1')!.current;
+    expect(lampCurrent).toBeGreaterThan(0);
+    const currents = new Map(wireCurrents(canvas, solution).map((entry) => [entry.wireId, entry.current]));
+    // ток положителен вдоль направления Провода from→to: оба Провода обтекаются по ходу контура
+    expectCloseTo(currents.get('w1')!, lampCurrent);
+    expectCloseTo(currents.get('w2')!, lampCurrent);
+  });
+
+  it('цепь с выключателем: через все Провода один и тот же ток', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('sw', 'switch', { closed: true }), component('r', 'resistor')],
+      [
+        wire('w1', pin('b', 0), pin('sw', 0)),
+        wire('w2', pin('sw', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const solution = solveDc(canvas);
+    const loop = readingOf(solution, 'r')!.current;
+    for (const entry of wireCurrents(canvas, solution)) {
+      expect(Math.abs(entry.current!)).toBeCloseTo(loop, 12);
+    }
+  });
+
+  it('параллельные Провода на одном выводе: ток не определяется — null', () => {
+    // два Провода от «плюса» батареи: как делится ток между ними, модель не определяет
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor')],
+      [
+        wire('w1', pin('b', 0), pin('r', 0)),
+        wire('w2', pin('b', 0), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const currents = new Map(wireCurrents(canvas, solveDc(canvas)).map((entry) => [entry.wireId, entry.current]));
+    expect(currents.get('w1')).toBeNull();
+    expect(currents.get('w2')).toBeNull();
+    expect(currents.get('w3')).not.toBeNull();
+  });
+});
+
+describe('lampBrightness: яркость от мощности', () => {
+  it('ниже порога накала — 0; выше — растёт; у полного накала — насыщается', () => {
+    const reading = (power: number) =>
+      ({ componentId: 'x', kind: 'lamp', current: 0.1, voltage: 1, power }) as const;
+    expect(lampBrightness(reading(0.01))).toBe(0);
+    expect(lampBrightness(reading(0.02))).toBeGreaterThan(0);
+    const half = lampBrightness(reading(0.25));
+    const full = lampBrightness(reading(0.675));
+    expect(half).toBeGreaterThan(0);
+    expect(half).toBeLessThan(1);
+    expect(full).toBe(1);
   });
 });

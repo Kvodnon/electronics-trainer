@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { ComponentKind, PlacedComponent } from '../../domain/canvas';
 import { defaultValuesOf, valueFieldOf } from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
+import { isMotorSpinning, lampBrightness, type ComponentReading } from '../../domain/simulator';
 
 /**
  * Условные обозначения Компонентов на Холсте — в ГОСТ (тикет 04).
@@ -33,8 +34,18 @@ export function componentValueLabel(component: PlacedComponent): string {
   }
 }
 
-/** Тело символа Компонента в локальных координатах. */
-export function CanvasSymbolBody({ component }: { component: PlacedComponent }): ReactNode {
+/**
+ * Тело символа Компонента в локальных координатах. `reading` — живое показание
+ * Симулятора: лампочка светится с яркостью от мощности, моторчик вращается,
+ * когда ток выше порога (в Палитре показание нет — символы статичны).
+ */
+export function CanvasSymbolBody({
+  component,
+  reading,
+}: {
+  component: PlacedComponent;
+  reading?: ComponentReading;
+}): ReactNode {
   switch (component.kind) {
     case 'battery':
       return (
@@ -57,6 +68,7 @@ export function CanvasSymbolBody({ component }: { component: PlacedComponent }):
     case 'lamp':
       return (
         <>
+          <LampGlow reading={reading} />
           <path d="M-40 0 H-16 M16 0 H40" />
           <circle cx="0" cy="0" r="16" />
           {/* нить накаливания — косой крест внутри окружности */}
@@ -81,13 +93,31 @@ export function CanvasSymbolBody({ component }: { component: PlacedComponent }):
       return (
         <>
           <path d="M-40 0 H-16 M16 0 H40" />
-          <circle cx="0" cy="0" r="16" />
-          <text x="0" y="6.5" textAnchor="middle" className="canvas-motor-sign" stroke="none">
-            М
-          </text>
+          {/* ротор с «М» крутится о живом показании выше порога; локальный центр — (0,0) */}
+          <g className={reading !== undefined && isMotorSpinning(reading) ? 'motor-rotor motor-rotor-spinning' : 'motor-rotor'}>
+            <circle cx="0" cy="0" r="16" />
+            <text x="0" y="6.5" textAnchor="middle" className="canvas-motor-sign" stroke="none">
+              М
+            </text>
+          </g>
         </>
       );
   }
+}
+
+/** Ореол горящей лампочки: прозрачность — яркость от мощности показания. */
+function LampGlow({ reading }: { reading?: ComponentReading }): ReactNode {
+  if (reading === undefined) return null;
+  const brightness = lampBrightness(reading);
+  if (brightness <= 0) return null;
+  return (
+    <circle
+      className="symbol-lamp-glow"
+      r={22}
+      opacity={brightness}
+      aria-hidden="true"
+    />
+  );
 }
 
 /** Неподвижные контакты и подвижное плечо выключателя/ключа (ГОСТ 2.755). */

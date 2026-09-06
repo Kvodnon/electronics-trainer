@@ -210,7 +210,7 @@ describe('evaluate: Схема-задание', () => {
     expect(evaluate(ohmTask, series).outcome).toBe('correct');
   });
 
-  it('схема вне границ → incorrect, Разбор называет измерение', () => {
+  it('живая схема вне границ → works-not-per-task: ток течёт, но измерение не то; Разбор называет измерение', () => {
     const verdict = evaluate(
       ohmTask,
       circuitAnswer(
@@ -218,7 +218,7 @@ describe('evaluate: Схема-задание', () => {
         [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('b', 1))],
       ),
     );
-    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.outcome).toBe('works-not-per-task');
     if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
     const current = verdict.conditionChecks.find(
       (check) => check.condition.kind === 'current-through',

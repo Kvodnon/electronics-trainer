@@ -996,3 +996,159 @@ body {
 .circuit-condition-failed .circuit-condition-mark {
   color: var(--incorrect);
 }
+
+/* «Работает, но не по условию» — тревожный янтарь между «пройдено» и «ошибка» */
+
+.verdict-works-not-per-task {
+  border-left-color: #e0b34a;
+}
+
+.verdict-works-not-per-task .verdict-word {
+  color: #e0b34a;
+}
+
+.circuit-diagnosis {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: var(--panel-raised);
+  border-left: 3px solid var(--incorrect);
+  line-height: 1.55;
+  font-size: 15px;
+}
+
+.circuit-diagnosis-works-not-per-task {
+  border-left-color: #e0b34a;
+}
+
+.circuit-diagnosis-mark {
+  color: var(--incorrect);
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.circuit-diagnosis-works-not-per-task .circuit-diagnosis-mark {
+  color: #e0b34a;
+}
+
+/* Живое поведение: тумблер оверлея в панели Задания */
+
+.overlay-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-raised);
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.overlay-toggle input {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+}
+
+.overlay-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.overlay-toggle:has(input:disabled) {
+  opacity: 0.5;
+}
+
+.overlay-toggle:has(input:checked) {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+/* Живое поведение: свечение лампочки от мощности */
+
+.symbol-lamp-glow {
+  fill: #ffd75e;
+  filter: blur(6px);
+  pointer-events: none;
+}
+
+/* Живое поведение: вращение моторчика */
+
+.motor-rotor-spinning {
+  animation: motor-spin 0.9s linear infinite;
+}
+
+@keyframes motor-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motor-rotor-spinning,
+  .fault-ring {
+    animation: none;
+  }
+}
+
+/* Подсветка места ошибки: пульсирующее кольцо и бегущий пунктир */
+
+.canvas-component-fault {
+  color: var(--incorrect);
+}
+
+.fault-ring {
+  fill: none;
+  stroke: var(--incorrect);
+  stroke-width: 2.5;
+  animation: fault-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes fault-pulse {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.wire-fault .wire-line {
+  stroke: var(--incorrect);
+  stroke-width: 3;
+  stroke-dasharray: 9 6;
+  animation: fault-dash 0.6s linear infinite;
+}
+
+@keyframes fault-dash {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+
+/* Оверлей токов и напряжений */
+
+.canvas-wire-reading,
+.canvas-component-reading {
+  font-family: var(--monospace);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: #0d141c;
+  stroke-width: 3.5;
+  pointer-events: none;
+}
+
+.canvas-wire-reading {
+  fill: var(--accent);
+}
+
+.canvas-reading-current {
+  fill: var(--accent);
+}
+
+.canvas-reading-voltage {
+  fill: var(--text-muted);
+}

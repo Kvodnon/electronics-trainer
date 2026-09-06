@@ -5,6 +5,7 @@
 import type { ChoiceId, ChoiceQuestion, CircuitTask, NumericQuestion, Task } from './task';
 import type { CanvasState } from './canvas';
 import { checkConditions, type ConditionCheck } from './circuitConditions';
+import { diagnoseCircuit, type CircuitDiagnosis } from './circuitDiagnoses';
 import { solveDc, type DcSolution } from './simulator';
 
 /** Ответ ученика на Вопрос с выбором варианта. */
@@ -64,13 +65,23 @@ export interface NumericQuestionEvaluation {
 }
 
 /**
+ * Исход проверки Схема-задания (CONTEXT.md: Диагноз): «пройдено», «работает,
+ * но не по условию» или ошибка. «Работает, но не по условию» — схема живая,
+ * но измерения не совпали с условием; в Задание она не засчитывается.
+ */
+export type CircuitOutcome = 'correct' | 'works-not-per-task' | 'incorrect';
+
+/**
  * Вердикт проверки Схема-задания: все условия по решению Симулятора.
- * Разбор каждого условия — строка с измеренными числами расчёта.
+ * Разбор каждого условия — строка с измеренными числами расчёта; Диагноз
+ * называет главную причину провала и место ошибки для подсветки на схеме.
  */
 export interface CircuitTaskEvaluation {
   readonly kind: 'circuit-task';
-  readonly outcome: 'correct' | 'incorrect';
+  readonly outcome: CircuitOutcome;
   readonly conditionChecks: readonly ConditionCheck[];
+  /** Первичный Диагноз: пуст для «пройдено». */
+  readonly diagnoses: readonly CircuitDiagnosis[];
   /** Расчёт, на котором построен вердикт: токи и напряжения собранной схемы. */
   readonly solution: DcSolution;
 }
@@ -155,15 +166,23 @@ function evaluateNumeric(
 
 /**
  * Проверка Схема-задания: Симулятор считает токи и напряжения, условия
- * проверяются по решению. Эквивалентные схемы дают одинаковый исход.
+ * проверяются по решению, Диагноз называет причину провала и место ошибки.
+ * Эквивалентные схемы дают одинаковый исход.
  */
 function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskEvaluation {
   const solution = solveDc(answer.canvas);
   const conditionChecks = checkConditions(answer.canvas, solution, task.conditions);
+  const diagnoses = diagnoseCircuit(answer.canvas, solution, conditionChecks);
+  const outcome: CircuitOutcome = conditionChecks.every((check) => check.passed)
+    ? 'correct'
+    : diagnoses[0]?.kind === 'works-not-per-task'
+      ? 'works-not-per-task'
+      : 'incorrect';
   return {
     kind: 'circuit-task',
-    outcome: conditionChecks.every((check) => check.passed) ? 'correct' : 'incorrect',
+    outcome,
     conditionChecks,
+    diagnoses,
     solution,
   };
 }

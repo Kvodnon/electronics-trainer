@@ -1,8 +1,9 @@
-import { useReducer, useState } from 'react';
+import { useReducer, useMemo, useState } from 'react';
 import type { CircuitTask } from '../../domain/task';
 import { canvasReducer, emptyHistory, type CanvasState } from '../../domain/canvas';
-import type { CircuitAnswer, CircuitTaskEvaluation } from '../../domain/evaluate';
-import { CanvasEditor } from './CanvasEditor';
+import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../../domain/evaluate';
+import { solveDc, wireCurrents, type ComponentReading } from '../../domain/simulator';
+import { CanvasEditor, type CanvasOverlay, type FaultSpot } from './CanvasEditor';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
@@ -16,13 +17,41 @@ interface CircuitTaskScreenProps {
  * Состояние Холста живёт здесь: по нажатию «Проверить» снимок схемы уходит
  * ответом в `evaluate` (Симулятор считает токи и напряжения), вердикт
  * показывается, пока схема не изменилась — после правки Разбор снимается,
- * чтобы не врать устаревшими числами.
+ * чтобы не врать устаревшими числами. Живое поведение (свечение лампочки,
+ * вращение моторчика) считается по текущей схеме на каждое её изменение;
+ * числовой оверлей и подсветка места ошибки — только по вердикту.
  */
 export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: CircuitTaskScreenProps) {
   const [history, onAction] = useReducer(canvasReducer, emptyHistory);
   /** Схема на момент последней «Проверить» — для снятия устаревшего вердикта. */
   const [submitted, setSubmitted] = useState<CanvasState | null>(null);
+  const [showReadings, setShowReadings] = useState(false);
   const shownEvaluation = submitted !== null && history.present === submitted ? evaluation : null;
+
+  /** Живое поведение схемы: пересчёт на каждое изменение Холста. */
+  const liveReadings = useMemo(() => {
+    try {
+      return new Map(solveDc(history.present).readings.map((reading) => [reading.componentId, reading]));
+    } catch {
+      return new Map<string, ComponentReading>();
+    }
+  }, [history.present]);
+
+  /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
+  const overlay = useMemo<CanvasOverlay | null>(() => {
+    if (shownEvaluation === null || !showReadings) return null;
+    return {
+      componentReadings: new Map(
+        shownEvaluation.solution.readings.map((reading) => [reading.componentId, reading]),
+      ),
+      wireCurrents: new Map(
+        wireCurrents(history.present, shownEvaluation.solution).map((entry) => [entry.wireId, entry.current]),
+      ),
+    };
+  }, [shownEvaluation, showReadings, history.present]);
+
+  const faultSpot: FaultSpot | null =
+    shownEvaluation?.diagnoses.find((diagnosis) => diagnosis.spot !== null)?.spot ?? null;
 
   function check() {
     setSubmitted(history.present);
@@ -39,10 +68,24 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
         palette={task.palette}
         history={history}
         onAction={onAction}
+        liveReadings={liveReadings}
+        overlay={overlay}
+        faultSpot={faultSpot}
         actions={
-          <button type="button" className="button-primary canvas-check" onClick={check}>
-            Проверить
-          </button>
+          <>
+            <label className="overlay-toggle">
+              <input
+                type="checkbox"
+                checked={showReadings}
+                disabled={shownEvaluation === null}
+                onChange={(event) => setShowReadings(event.target.checked)}
+              />
+              Токи и напряжения
+            </label>
+            <button type="button" className="button-primary canvas-check" onClick={check}>
+              Проверить
+            </button>
+          </>
         }
       />
       {shownEvaluation !== null && (
@@ -52,7 +95,17 @@ export function CircuitTaskScreen({ task, evaluation, onAnswer, onNext }: Circui
   );
 }
 
-/** Вердикт «Проверить»: исход и Разбор условий на числах расчёта. */
+/** Слова и настроения вердикта для каждого исхода проверки. */
+const OUTCOME_WORDING: Record<CircuitOutcome, { word: string; note: string }> = {
+  correct: { word: 'Пройдено', note: 'Схема работает по условию Задания.' },
+  'works-not-per-task': {
+    word: 'Работает, но не по условию',
+    note: 'Схема подаёт жизнь, но условию не отвечает — сверяйтесь с Разбором и правьте.',
+  },
+  incorrect: { word: 'Не пройдено', note: 'Правьте схему и проверяйте снова — попытки не ограничены.' },
+};
+
+/** Вердикт «Проверить»: исход, Диагноз с местом ошибки и Разбор условий. */
 function CircuitVerdict({
   evaluation,
   onNext,
@@ -60,19 +113,21 @@ function CircuitVerdict({
   readonly evaluation: CircuitTaskEvaluation;
   readonly onNext: () => void;
 }) {
-  const passed = evaluation.outcome === 'correct';
+  const { word, note } = OUTCOME_WORDING[evaluation.outcome];
   return (
     <section className="circuit-verdict" aria-label="Вердикт проверки" aria-live="polite">
       <p className={`verdict verdict-${evaluation.outcome}`}>
-        <span className="verdict-word">{passed ? 'Пройдено' : 'Не пройдено'}</span>
-        {passed ? (
-          <span className="verdict-note">Схема работает по условию Задания.</span>
-        ) : (
-          <span className="verdict-note">
-            Правьте схему и проверяйте снова — попытки не ограничены.
-          </span>
-        )}
+        <span className="verdict-word">{word}</span>
+        <span className="verdict-note">{note}</span>
       </p>
+      {evaluation.diagnoses.map((diagnosis, index) => (
+        <p key={index} className={`circuit-diagnosis circuit-diagnosis-${diagnosis.kind}`}>
+          <span className="circuit-diagnosis-mark" aria-hidden="true">
+            ⌖
+          </span>
+          {diagnosis.text}
+        </p>
+      ))}
       <ul className="circuit-conditions">
         {evaluation.conditionChecks.map((check, index) => (
           <li
@@ -86,7 +141,7 @@ function CircuitVerdict({
           </li>
         ))}
       </ul>
-      {passed && (
+      {evaluation.outcome === 'correct' && (
         <button type="button" className="button-primary" onClick={onNext}>
           Дальше
         </button>

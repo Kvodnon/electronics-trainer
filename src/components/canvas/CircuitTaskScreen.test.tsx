@@ -51,6 +51,17 @@ function mockCanvasRect(container: HTMLElement): SVGSVGElement {
 }
 
 /**
+ * Замыкает контур вокруг поставленной первым «Батареи 1»: «плюс» — к Компоненту,
+ * второй вывод Компонента — к «минусу». Батарея уже на Холсте.
+ */
+async function assembleLoop(user: ReturnType<typeof userEvent.setup>, secondComponentName: string) {
+  await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${secondComponentName}` }));
+  await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${secondComponentName}` }));
+}
+
+/**
  * Перетаскивание Компонента мышью: взять в (fromX, fromY), отпустить в (toX, toY).
  * Жест из трёх событий fireEvent: userEvent авто-отпускает зажатую кнопку
  * между вызовами, а события — настоящие, порядок контролирует тест.
@@ -294,6 +305,28 @@ describe('Undo/redo и сброс', () => {
   });
 });
 
+/**
+ * Обвязка как в ModuleScreen: ответ хранит родитель, вердикт считает
+ * домен. Проверяется экран целиком, без моков.
+ */
+function renderCheckableTask(task: CircuitTask) {
+  const onNext = vi.fn();
+  function Harness() {
+    const [answer, setAnswer] = useState<Answer | null>(null);
+    const evaluation = answer !== null ? evaluate(task, answer) : null;
+    return (
+      <CircuitTaskScreen
+        task={task}
+        evaluation={evaluationOfKind(evaluation, 'circuit-task')}
+        onAnswer={setAnswer}
+        onNext={onNext}
+      />
+    );
+  }
+  render(<Harness />);
+  return onNext;
+}
+
 describe('Кнопка «Проверить»', () => {
   /** Задание: батарея и лампочка, лампочка горит, ток 50–100 мА. */
   const litTask: CircuitTask = {
@@ -308,28 +341,6 @@ describe('Кнопка «Проверить»', () => {
       { kind: 'component-active', componentKind: 'lamp', active: true },
     ],
   };
-
-  /**
-   * Обвязка как в ModuleScreen: ответ хранит родитель, вердикт считает
-   * домен. Проверяется экран целиком, без моков.
-   */
-  function renderCheckableTask(task: CircuitTask) {
-    const onNext = vi.fn();
-    function Harness() {
-      const [answer, setAnswer] = useState<Answer | null>(null);
-      const evaluation = answer !== null ? evaluate(task, answer) : null;
-      return (
-        <CircuitTaskScreen
-          task={task}
-          evaluation={evaluationOfKind(evaluation, 'circuit-task')}
-          onAnswer={setAnswer}
-          onNext={onNext}
-        />
-      );
-    }
-    render(<Harness />);
-    return onNext;
-  }
 
   /** Ставит батарею и лампочку и соединяет их в контур. */
   async function assembleLampLoop(user: ReturnType<typeof userEvent.setup>) {
@@ -407,3 +418,123 @@ describe('Кнопка «Проверить»', () => {
     expect(screen.getByText(/Выключатель на схеме: 1 шт/)).toBeInTheDocument();
   });
 });
+
+describe('Живое поведение схемы', () => {
+  it('лампочка в замкнутом контуре светится ещё до «Проверить», тёмная — без контура', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    expect(document.querySelector('.symbol-lamp-glow')).toBeNull();
+
+    await assembleLoop(user, 'Лампочка 2');
+    const glow = document.querySelector('.symbol-lamp-glow');
+    expect(glow).not.toBeNull();
+    // 9 В на 120 Ом — полный накал, яркость насыщена
+    expect(glow!.getAttribute('opacity')).toBe('1');
+  });
+
+  it('моторчик в замкнутом контуре вращается', async () => {
+    const user = userEvent.setup();
+    renderTask();
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Моторчик' }));
+    expect(document.querySelector('.motor-rotor-spinning')).toBeNull();
+
+    await assembleLoop(user, 'Моторчик 2');
+    expect(document.querySelector('.motor-rotor-spinning')).not.toBeNull();
+  });
+});
+
+describe('Диагноз и подсветка места ошибки', () => {
+  /** Задание: лампочка горит с током 50–100 мА. */
+  const litTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'diagnose-lit',
+    prompt: 'Соберите цепь: батарея и лампочка, лампочка должна гореть.',
+    palette: module1Palette,
+    conditions: [
+      { kind: 'current-through', componentKind: 'lamp', range: { from: 0.05, to: 0.1 } },
+      { kind: 'component-active', componentKind: 'lamp', active: true },
+    ],
+  };
+
+  it('схема-ловушка с обрывом → «Проверить» → Диагноз назван, место ошибки подсвечено', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(litTask);
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    // только один Провод — контур не замкнут
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Обрыв цепи/)).toBeInTheDocument();
+    // подсветка указывает на конкретный Компонент со свободным выводом
+    const lamp = screen.getByRole('button', { name: 'Лампочка 2' });
+    expect(lamp.getAttribute('class')).toContain('canvas-component-fault');
+    expect(document.querySelector('.fault-ring')).not.toBeNull();
+  });
+
+  it('«работает, но не по условию» — отдельное слово вердикта, не «Пройдено» и не «Не пройдено»', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(litTask);
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    // лампочка 500 Ом: горит (0,16 Вт), но ток 18 мА — ниже условия
+    await user.click(screen.getByRole('button', { name: 'Лампочка 2' }));
+    await user.clear(screen.getByLabelText('Номинал, Ом'));
+    await user.type(screen.getByLabelText('Номинал, Ом'), '500');
+    await user.click(screen.getByRole('button', { name: 'Применить' }));
+    await assembleLoop(user, 'Лампочка 2');
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
+    expect(screen.queryByText('Пройдено')).not.toBeInTheDocument();
+    expect(screen.queryByText('Не пройдено')).not.toBeInTheDocument();
+    expect(screen.getByText(/работает, но не по условию/)).toBeInTheDocument();
+  });
+});
+
+describe('Оверлей токов и напряжений', () => {
+  const litTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'overlay-lit',
+    prompt: 'Соберите цепь: батарея и лампочка, лампочка должна гореть.',
+    palette: module1Palette,
+    conditions: [
+      { kind: 'current-through', componentKind: 'lamp', range: { from: 0.05, to: 0.1 } },
+      { kind: 'component-active', componentKind: 'lamp', active: true },
+    ],
+  };
+
+  it('выключается и включается после «Проверить», значения совпадают с расчётом', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(litTask);
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Лампочка' }));
+    await assembleLoop(user, 'Лампочка 2');
+
+    // до проверки оверлей недоступен
+    const toggle = screen.getByRole('checkbox', { name: 'Токи и напряжения' });
+    expect(toggle).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(document.querySelector('.canvas-wire-reading')).toBeNull();
+
+    await user.click(toggle);
+    // 9 В / 120,1 Ом = 74,9 мА: подпись тока на каждом из двух Проводов контура
+    const wireLabels = document.querySelectorAll('text.canvas-wire-reading');
+    expect(wireLabels).toHaveLength(2);
+    for (const label of wireLabels) expect(label.textContent).toBe('74,9 мА');
+    // напряжение из того же решения: на батарее и на лампочке — одно и то же (внутреннее падение мало)
+    expect(screen.getAllByText('8,99 В')).toHaveLength(2);
+
+    await user.click(toggle);
+    expect(document.querySelector('text.canvas-wire-reading')).toBeNull();
+  });
+});
+

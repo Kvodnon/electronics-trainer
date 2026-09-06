@@ -21,6 +21,8 @@ export const CLOSED_CONTACT_RESISTANCE = 1e-3;
 export const OPEN_CONTACT_RESISTANCE = 1e9;
 /** Порог мощности накала лампочки, Вт. */
 export const LAMP_LIT_POWER = 0.02;
+/** Мощность полного накала лампочки, Вт: выше — яркость насыщается. */
+export const LAMP_FULL_POWER = 0.5;
 /** Порог мощности вращения моторчика, Вт. */
 export const MOTOR_SPIN_POWER = 0.05;
 
@@ -53,9 +55,58 @@ export function readingsOfKind(solution: DcSolution, kind: ComponentKind): reado
   return solution.readings.filter((reading) => reading.kind === kind);
 }
 
+/**
+ * Показание Провода для оверлея токов: Провод — часть узла Симулятора, его ток
+ * восстанавливается по ветви Компонента на конце Провода. Это честно, только
+ * когда на каждом из двух выводов висит единственный Провод: при параллельных
+ * Проводах одного вывода ток между ними не определяется — значение null.
+ */
+export interface WireCurrent {
+  readonly wireId: string;
+  /** Ток Провода, А; null — ток не определяется (Провод параллелит вывод). */
+  readonly current: number | null;
+}
+
+export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonly WireCurrent[] {
+  const wiresPerPin = new Map<string, number>();
+  const touch = (ref: { readonly componentId: string; readonly pin: number }): void => {
+    const key = `${ref.componentId}:${ref.pin}`;
+    wiresPerPin.set(key, (wiresPerPin.get(key) ?? 0) + 1);
+  };
+  for (const wire of canvas.wires) {
+    touch(wire.from);
+    touch(wire.to);
+  }
+
+  return canvas.wires.map((wire) => {
+    const alone = (ref: { readonly componentId: string; readonly pin: number }): boolean =>
+      wiresPerPin.get(`${ref.componentId}:${ref.pin}`) === 1;
+    const component = canvas.components.find((candidate) => candidate.id === wire.from.componentId);
+    if (component === undefined || !alone(wire.from) || !alone(wire.to)) {
+      return { wireId: wire.id, current: null };
+    }
+    const reading = solution.readings.find((candidate) => candidate.componentId === wire.from.componentId);
+    if (reading === undefined) return { wireId: wire.id, current: null };
+    // Ток из Компонента в Провод: у батареи — наружу из «плюса» (вывод 0),
+    // у остальных — из вывода 1 (ток течёт от вывода 0 к выводу 1 внутри).
+    const pinSign = wire.from.pin === 0 ? 1 : -1;
+    const kindSign = component.kind === 'battery' ? 1 : -1;
+    return { wireId: wire.id, current: kindSign * pinSign * reading.current };
+  });
+}
+
 /** Лампочка горит: мощность не ниже порога срабатывания. */
 export function isLampLit(reading: ComponentReading): boolean {
   return reading.power >= LAMP_LIT_POWER;
+}
+
+/**
+ * Яркость лампочки от 0 до 1: живое поведение Холста. Ниже порога накала — 0,
+ * дальше растёт с мощностью и насыщается при полном накале.
+ */
+export function lampBrightness(reading: ComponentReading): number {
+  if (reading.power < LAMP_LIT_POWER) return 0;
+  return Math.min(1, reading.power / LAMP_FULL_POWER);
 }
 
 /** Моторчик крутится: мощность не ниже порога срабатывания. */

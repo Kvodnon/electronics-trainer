@@ -4,9 +4,10 @@
  * Эквивалентные схемы проходят одинаково — сравнивается физика, не эталон.
  * Чистый TypeScript без DOM.
  */
-import type { CanvasState, ComponentKind } from './canvas';
+import type { CanvasState } from './canvas';
 import type { CircuitCondition } from './task';
 import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quantity';
+import { COMPONENT_LEXIS, cap, type ComponentLexis } from './componentLexis';
 import {
   LAMP_LIT_POWER,
   MOTOR_SPIN_POWER,
@@ -17,35 +18,17 @@ import {
   type DcSolution,
 } from './simulator';
 
-/** Проверка одного условия: исход и готовая строка Разбора с числами расчёта. */
+/**
+ * Проверка одного условия: исход и готовая строка Разбора с числами расчёта.
+ * `componentId`/`measured` — Компонент, на показании которого построена строка,
+ * и само измерение: по ним Диагноз указывает место ошибки для подсветки.
+ */
 export interface ConditionCheck {
   readonly condition: CircuitCondition;
   readonly passed: boolean;
   readonly text: string;
-}
-
-/** Русские формы имени вида Компонента для строк Разбора. */
-interface ComponentLexis {
-  readonly nominative: string;
-  readonly accusative: string;
-  readonly prepositional: string;
-  readonly genitive: string;
-  readonly genitivePlural: string;
-}
-
-/** Русские формы имён Компонентов для строк Разбора. */
-const COMPONENT_LEXIS: Record<ComponentKind, ComponentLexis> = {
-  battery: { nominative: 'батарея', accusative: 'батарею', prepositional: 'батарее', genitive: 'батареи', genitivePlural: 'батарей' },
-  resistor: { nominative: 'резистор', accusative: 'резистор', prepositional: 'резисторе', genitive: 'резистора', genitivePlural: 'резисторов' },
-  lamp: { nominative: 'лампочка', accusative: 'лампочку', prepositional: 'лампочке', genitive: 'лампочки', genitivePlural: 'лампочек' },
-  switch: { nominative: 'выключатель', accusative: 'выключатель', prepositional: 'выключателе', genitive: 'выключателя', genitivePlural: 'выключателей' },
-  pushbutton: { nominative: 'ключ', accusative: 'ключ', prepositional: 'ключе', genitive: 'ключа', genitivePlural: 'ключей' },
-  motor: { nominative: 'моторчик', accusative: 'моторчик', prepositional: 'моторчике', genitive: 'моторчика', genitivePlural: 'моторчиков' },
-};
-
-/** Первая буква — заглавная: строки Разбора начинаются именем Компонента. */
-function cap(text: string): string {
-  return text[0].toUpperCase() + text.slice(1);
+  readonly componentId?: string;
+  readonly measured?: number;
 }
 
 /**
@@ -164,6 +147,8 @@ function checkMeasurement(
     text: `${traits.title(lexis)} — ${formatQuantity(valueOf(candidate), traits.unit)}, ${
       inRange(candidate) ? 'в границах' : 'вне границ'
     } условия (${bounds}).`,
+    componentId: candidate.componentId,
+    measured: valueOf(candidate),
   };
 }
 
@@ -199,8 +184,14 @@ function checkComponentActive(
     : `${cap(lexis.nominative)} не ${verb}: мощность ${power} ниже порога ${formatQuantity(threshold, 'Вт')}.`;
 
   if (condition.active || !anyActive) {
-    return { condition, passed, text: fact };
+    return { condition, passed, text: fact, componentId: candidate.componentId, measured: candidate.power };
   }
   // требуется «не горит», а Компонент активен
-  return { condition, passed, text: `${fact} По условию ${lexis.nominative} активной быть не должна.` };
+  return {
+    condition,
+    passed,
+    text: `${fact} По условию ${lexis.nominative} активной быть не должна.`,
+    componentId: candidate.componentId,
+    measured: candidate.power,
+  };
 }
