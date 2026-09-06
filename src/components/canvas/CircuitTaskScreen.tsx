@@ -13,10 +13,10 @@ import {
   type DcSolution,
 } from '../../domain/simulator';
 import {
-  measureCurrent,
-  measureVoltage,
+  emptyProbes,
+  measure,
   type MultimeterMode,
-  type MultimeterReading,
+  type MultimeterProbes,
 } from '../../domain/multimeter';
 import { formatQuantity } from '../../domain/quantity';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
@@ -75,16 +75,12 @@ export function CircuitTaskScreen({
   /** Мультиметр: включённость, режим и приложенные щупы (точки или ветвь). */
   const [multimeterOn, setMultimeterOn] = useState(false);
   const [multimeterMode, setMultimeterMode] = useState<MultimeterMode>('voltage');
-  const [probes, setProbes] = useState<{ red: PinRef | null; black: PinRef | null; branch: string | null }>({
-    red: null,
-    black: null,
-    branch: null,
-  });
+  const [probes, setProbes] = useState<MultimeterProbes>(emptyProbes);
   /** Какой щуп приложится следующим кликом по точке: красный, затем чёрный. */
   const [nextProbe, setNextProbe] = useState<'red' | 'black'>('red');
 
   function clearProbes() {
-    setProbes({ red: null, black: null, branch: null });
+    setProbes(emptyProbes);
     setNextProbe('red');
   }
 
@@ -108,19 +104,11 @@ export function CircuitTaskScreen({
     setProbes((current) => ({ ...current, branch: componentId }));
   }
 
-  const probesApplied =
-    multimeterMode === 'voltage' ? probes.red !== null && probes.black !== null : probes.branch !== null;
-
   /** Показание Мультиметра: из живого решения, обновляется с любым изменением схемы. */
-  const multimeterReading = useMemo<MultimeterReading | null>(() => {
-    if (!multimeterOn || liveSolution === null) return null;
-    if (multimeterMode === 'voltage') {
-      return probes.red !== null && probes.black !== null
-        ? measureVoltage(liveSolution, probes.red, probes.black)
-        : null;
-    }
-    return probes.branch !== null ? measureCurrent(liveSolution, probes.branch) : null;
-  }, [multimeterOn, multimeterMode, probes, liveSolution]);
+  const multimeterResult = useMemo(
+    () => (multimeterOn ? measure(liveSolution, multimeterMode, probes) : { status: 'idle' as const }),
+    [multimeterOn, multimeterMode, probes, liveSolution],
+  );
 
   /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
   const overlay = useMemo<CanvasOverlay | null>(() => {
@@ -159,9 +147,7 @@ export function CircuitTaskScreen({
           multimeterOn
             ? {
                 mode: multimeterMode,
-                redProbe: probes.red,
-                blackProbe: probes.black,
-                branchProbe: probes.branch,
+                probes,
                 onPinProbe: applyPinProbe,
                 onBranchProbe: applyBranchProbe,
                 onClearProbes: clearProbes,
@@ -191,17 +177,17 @@ export function CircuitTaskScreen({
                 </select>
                 <output
                   className={`multimeter-display${
-                    multimeterReading === null && probesApplied ? ' multimeter-display-unavailable' : ''
+                    multimeterResult.status === 'unavailable' ? ' multimeter-display-unavailable' : ''
                   }`}
                   aria-live="polite"
                   title={
-                    multimeterReading === null && probesApplied
+                    multimeterResult.status === 'unavailable'
                       ? 'Между щупами нет общей цепи — измерение невозможно'
                       : undefined
                   }
                 >
-                  {multimeterReading !== null
-                    ? formatQuantity(multimeterReading.value, multimeterReading.unit)
+                  {multimeterResult.status === 'ok'
+                    ? formatQuantity(multimeterResult.reading.value, multimeterResult.reading.unit)
                     : '—'}
                 </output>
               </span>

@@ -24,9 +24,9 @@ import {
 import { CanvasSymbolBody, PaletteSymbol, componentTitles, componentValueLabel } from './CanvasSymbols';
 import { CanvasSelectionPanel } from './CanvasSelectionPanel';
 import { formatQuantity } from '../../domain/quantity';
+import { probePoints, type MultimeterMode, type MultimeterProbes } from '../../domain/multimeter';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import type { ComponentReading } from '../../domain/simulator';
-import type { MultimeterMode } from '../../domain/multimeter';
 import type { SymbolStandard } from '../../domain/symbols';
 
 /** Радиус зоны захвата символа Компонента мышью. */
@@ -73,10 +73,7 @@ export interface CanvasOverlay {
  */
 export interface MultimeterGestures {
   readonly mode: MultimeterMode;
-  readonly redProbe: PinRef | null;
-  readonly blackProbe: PinRef | null;
-  /** Компонент, на ветвь которого положены щупы в режиме тока. */
-  readonly branchProbe: string | null;
+  readonly probes: MultimeterProbes;
   readonly onPinProbe: (ref: PinRef) => void;
   readonly onBranchProbe: (componentId: string) => void;
   readonly onClearProbes: () => void;
@@ -174,16 +171,16 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
     const original = componentById.get(drag.componentId);
     const movedPosition =
       original !== undefined && (original.x !== drag.position.x || original.y !== drag.position.y);
-    if (!movedPosition && multimeter !== null && multimeter.mode === 'current') {
-      // клик без сдвига в режиме тока — щупы на ветвь Компонента
-      multimeter.onBranchProbe(drag.componentId);
-    } else if (original !== undefined && movedPosition) {
+    if (movedPosition) {
       onAction({
         type: 'component-moved',
         componentId: drag.componentId,
         x: drag.position.x,
         y: drag.position.y,
       });
+    } else if (multimeter !== null && multimeter.mode === 'current') {
+      // клик без сдвига в режиме тока — щупы на ветвь Компонента
+      multimeter.onBranchProbe(drag.componentId);
     }
     setDrag(null);
   }
@@ -271,24 +268,9 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
     return `${componentTitles[component.kind]} ${index}`.trim();
   };
 
-  /** Щупы Мультиметра для отрисовки: точка измерения и цвет. В режиме тока —
-   * оба конца ветви выбранного Компонента. */
-  const probeMarkers: readonly { readonly ref: PinRef; readonly tone: 'red' | 'black' }[] =
-    multimeter === null
-      ? []
-      : multimeter.mode === 'voltage'
-        ? [
-            ...(multimeter.redProbe !== null ? [{ ref: multimeter.redProbe, tone: 'red' as const }] : []),
-            ...(multimeter.blackProbe !== null
-              ? [{ ref: multimeter.blackProbe, tone: 'black' as const }]
-              : []),
-          ]
-        : multimeter.branchProbe !== null
-          ? [
-              { ref: { componentId: multimeter.branchProbe, pin: 0 }, tone: 'red' as const },
-              { ref: { componentId: multimeter.branchProbe, pin: 1 }, tone: 'black' as const },
-            ]
-          : [];
+  /** Щупы Мультиметра для отрисовки: точки измерения из домена, точки — по
+   * текущему положению Компонентов (в том числе во время перетаскивания). */
+  const probeMarkers = multimeter === null ? [] : probePoints(multimeter.mode, multimeter.probes);
 
   return (
     <div
@@ -484,14 +466,14 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
             );
           })}
 
-        {probeMarkers.map(({ ref, tone }) => {
+        {probeMarkers.map(({ ref, color }) => {
           const component = componentById.get(ref.componentId);
           if (component === undefined) return null;
           const point = pinPointOf(withDrag(component), ref.pin);
           return (
             <circle
-              key={`multimeter-probe-${tone}`}
-              className={`multimeter-probe multimeter-probe-${tone}`}
+              key={`multimeter-probe-${color}`}
+              className={`multimeter-probe multimeter-probe-${color}`}
               cx={point.x}
               cy={point.y}
               r={10}

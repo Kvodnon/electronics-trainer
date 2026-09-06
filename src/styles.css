@@ -13,6 +13,8 @@
   --accent-dim: #2a9e70;
   --correct: #43d17c;
   --incorrect: #ff6b6b;
+  --probe-red: #ff6b6b;
+  --probe-black: #b7c3d4;
   --monospace: ui-monospace, 'Cascadia Mono', 'JetBrains Mono', Consolas, monospace;
   --sans: system-ui, 'Segoe UI', Roboto, Arial, sans-serif;
 }
@@ -1141,11 +1143,11 @@ body {
 }
 
 .multimeter-probe-red {
-  stroke: var(--incorrect);
+  stroke: var(--probe-red);
 }
 
 .multimeter-probe-black {
-  stroke: #b7c3d4;
+  stroke: var(--probe-black);
 }
 
 /* Переключатель стандарта обозначений (ГОСТ/ANSI) */

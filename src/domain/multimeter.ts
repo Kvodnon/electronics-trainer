@@ -18,6 +18,17 @@ export interface MultimeterReading {
   readonly unit: QuantityUnit;
 }
 
+/** Приложенные щупы: две точки (напряжение) или ветвь Компонента (ток). */
+export interface MultimeterProbes {
+  readonly red: PinRef | null;
+  readonly black: PinRef | null;
+  /** Компонент, на ветвь которого положены щупы в режиме тока. */
+  readonly branch: string | null;
+}
+
+/** Щупы сняты. */
+export const emptyProbes: MultimeterProbes = { red: null, black: null, branch: null };
+
 /**
  * Напряжение между щупами: потенциал красного минус чёрного, В; перестановка
  * щупов меняет знак. Щупы без общей цепи (разные острова Симулятора)
@@ -48,4 +59,50 @@ export function measureVoltage(
 export function measureCurrent(solution: DcSolution, componentId: string): MultimeterReading | null {
   const reading = readingOf(solution, componentId);
   return reading === null ? null : { value: Math.abs(reading.current), unit: 'А' };
+}
+
+/** Итог измерения: щупы не приложены; приложены, но измерить нельзя; значение. */
+export type MultimeterResult =
+  | { readonly status: 'idle' }
+  | { readonly status: 'unavailable' }
+  | { readonly status: 'ok'; readonly reading: MultimeterReading };
+
+/**
+ * Измерение по режиму и приложенным щупам — шов экрана: решение могло не
+ * сойтись (null), а приложенные щупы могли остаться без Компонента — оба
+ * случая честно «unavailable», не «idle».
+ */
+export function measure(
+  solution: DcSolution | null,
+  mode: MultimeterMode,
+  probes: MultimeterProbes,
+): MultimeterResult {
+  if (mode === 'voltage') {
+    if (probes.red === null || probes.black === null) return { status: 'idle' };
+    if (solution === null) return { status: 'unavailable' };
+    const reading = measureVoltage(solution, probes.red, probes.black);
+    return reading === null ? { status: 'unavailable' } : { status: 'ok', reading };
+  }
+  if (probes.branch === null) return { status: 'idle' };
+  if (solution === null) return { status: 'unavailable' };
+  const reading = measureCurrent(solution, probes.branch);
+  return reading === null ? { status: 'unavailable' } : { status: 'ok', reading };
+}
+
+/** Точки приложения щупов для отрисовки: приложенные точки или концы ветви. */
+export function probePoints(
+  mode: MultimeterMode,
+  probes: MultimeterProbes,
+): readonly { readonly ref: PinRef; readonly color: 'red' | 'black' }[] {
+  if (mode === 'voltage') {
+    return [
+      ...(probes.red !== null ? [{ ref: probes.red, color: 'red' as const }] : []),
+      ...(probes.black !== null ? [{ ref: probes.black, color: 'black' as const }] : []),
+    ];
+  }
+  if (probes.branch === null) return [];
+  return [
+    { ref: { componentId: probes.branch, pin: 0 }, color: 'red' as const },
+    { ref: { componentId: probes.branch, pin: 1 }, color: 'black' as const },
+  ];
 }

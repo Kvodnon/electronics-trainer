@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CanvasState, ComponentKind, PinRef, PlacedComponent, Wire } from './canvas';
 import { defaultValuesOf } from './canvas';
 import { solveDc } from './simulator';
-import { measureCurrent, measureVoltage } from './multimeter';
+import { emptyProbes, measure, measureCurrent, measureVoltage, probePoints } from './multimeter';
 
 // Мультиметр читает решение Симулятора (ADR-0001): напряжение между щупами —
 // разность узловых потенциалов, ток ветви — ветвевое показание. Золотые схемы
@@ -90,6 +90,44 @@ describe('measureVoltage: напряжение между щупами', () => {
   it('щуп на несуществующем Компоненте — null', () => {
     const solution = solveDc(dividerCanvas());
     expect(measureVoltage(solution, pin('нет', 0), pin('b', 1))).toBeNull();
+  });
+});
+
+describe('measure и probePoints: шов экрана', () => {
+  it('без щупов — idle; со щупами без общей цепи — unavailable; со схемой — ok', () => {
+    const solution = solveDc(switchedLoop(true));
+    expect(measure(solution, 'voltage', emptyProbes)).toEqual({ status: 'idle' });
+    expect(measure(null, 'voltage', { ...emptyProbes, red: pin('b', 0), black: pin('b', 1) })).toEqual({
+      status: 'unavailable',
+    });
+    const ok = measure(solution, 'voltage', { ...emptyProbes, red: pin('b', 0), black: pin('b', 1) });
+    expect(ok.status).toBe('ok');
+    expect(ok.status === 'ok' && ok.reading.value).toBeCloseTo(9, 1);
+  });
+
+  it('в режиме тока та же лестница состояний по ветви', () => {
+    const solution = solveDc(switchedLoop(true));
+    expect(measure(solution, 'current', emptyProbes)).toEqual({ status: 'idle' });
+    // Компонент с щупом удалён со схемы: решение есть, ветви нет
+    expect(measure(solution, 'current', { ...emptyProbes, branch: 'нет' })).toEqual({
+      status: 'unavailable',
+    });
+    const ok = measure(solution, 'current', { ...emptyProbes, branch: 'lamp1' });
+    expect(ok.status).toBe('ok');
+  });
+
+  it('probePoints: приложенные точки в режиме напряжения, оба конца ветви в режиме тока', () => {
+    const voltageProbes = { ...emptyProbes, red: pin('b', 0), black: pin('b', 1) };
+    expect(probePoints('voltage', emptyProbes)).toEqual([]);
+    expect(probePoints('voltage', voltageProbes)).toEqual([
+      { ref: pin('b', 0), color: 'red' },
+      { ref: pin('b', 1), color: 'black' },
+    ]);
+    expect(probePoints('current', emptyProbes)).toEqual([]);
+    expect(probePoints('current', { ...emptyProbes, branch: 'lamp1' })).toEqual([
+      { ref: pin('lamp1', 0), color: 'red' },
+      { ref: pin('lamp1', 1), color: 'black' },
+    ]);
   });
 });
 
