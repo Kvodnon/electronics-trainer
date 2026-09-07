@@ -9,14 +9,13 @@
  * связей установку проходит, а хранение — нет. Чистый TypeScript без DOM.
  */
 import { pinKey } from './canvas';
-import { evaluateDigital, type Bit } from './booleanEngine';
+import { digitalNetsOf, evaluateDigital, type Bit } from './booleanEngine';
 import {
   digitalPinCountOf,
   digitalPinRole,
   type DigitalCanvasState,
   type DigitalComponent,
 } from './digitalCanvas';
-import { createUnionFind } from './unionFind';
 import type { LogicTask, LogicTableRow } from './task';
 
 /** Сверка одной строки таблицы: требуемые уровни против получившихся. */
@@ -61,12 +60,7 @@ export function checkLogicTable(canvas: DigitalCanvasState, task: LogicTask): Lo
       diagnoses: [
         {
           kind: 'structure',
-          text:
-            `Входы и выходы не расставлены: по условию нужно ${task.inputs} Кнопок-входов и ` +
-            `${task.outputs} Индикаторов-выходов, а на схеме Кнопок ${buttons.length} и ` +
-            'Индикаторов ' +
-            `${indicators.length}. Порядок входов и выходов — порядок установки Кнопок и ` +
-            'Индикаторов на Холст.',
+          text: `Входы и выходы не расставлены: по условию нужно ${task.inputs} Кнопок-входов и ${task.outputs} Индикаторов-выходов, а на схеме Кнопок ${buttons.length} и Индикаторов ${indicators.length}. Порядок входов и выходов — порядок установки Кнопок и Индикаторов на Холст.`,
           spot: extra?.id ?? null,
         },
       ],
@@ -185,10 +179,9 @@ function mismatchDiagnosis(
  * первый водитель по порядку.
  */
 function driverOf(canvas: DigitalCanvasState, indicatorId: string): DigitalComponent | undefined {
-  const nets = createUnionFind();
-  for (const wire of canvas.wires) {
-    nets.union(pinKey(wire.from.componentId, wire.from.pin), pinKey(wire.to.componentId, wire.to.pin));
-  }
+  // Сети — те же, что строит движок: Диагноз не может расходиться с ним в
+  // определении сети, иначе подсветит не тот Компонент.
+  const nets = digitalNetsOf(canvas);
   const indicatorNet = nets.find(pinKey(indicatorId, 0));
   for (const component of canvas.components) {
     for (let pin = 0; pin < digitalPinCountOf(component.kind); pin += 1) {

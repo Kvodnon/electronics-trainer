@@ -21,7 +21,7 @@ import {
   type DigitalComponent,
   type DigitalKind,
 } from './digitalCanvas';
-import { createUnionFind } from './unionFind';
+import { createUnionFind, type UnionFind } from './unionFind';
 
 /** Строгий сигнал: 0 или 1, третьего не дано. */
 export type Bit = 0 | 1;
@@ -68,13 +68,21 @@ const MAX_SETTLE_STEPS = 64;
  * перезаряжаются заново в любом случае — состояния Кнопок между строками
  * меняет сама проверка.
  */
-export function evaluateDigital(
-  canvas: DigitalCanvasState,
-  now: number,
-  initial?: ReadonlyMap<string, Bit>,
-): ReadonlyMap<string, Bit> {
+/**
+ * Сети цифрового Холста: Провода объединяют выводы, каждый вывод начинает
+ * одинокую сеть — неприсоединённые тоже получают уровень. Провод с
+ * несуществующим выводом (схема из загруженного файла минуя редьюсер) сеть
+ * не объединяет. Общий механизм движка и Диагноза: у сетей один владелец,
+ * чтобы определения «что такое сеть» не разошлись.
+ */
+export function digitalNetsOf(canvas: DigitalCanvasState): UnionFind {
   const componentById = new Map(canvas.components.map((c) => [c.id, c]));
-  const keyOf = (ref: PinRef): string => pinKey(ref.componentId, ref.pin);
+  const nets = createUnionFind();
+  for (const component of canvas.components) {
+    for (let pin = 0; pin < digitalPinCountOf(component.kind); pin += 1) {
+      nets.find(pinKey(component.id, pin));
+    }
+  }
   const hasPin = (ref: PinRef): boolean => {
     const component = componentById.get(ref.componentId);
     return (
@@ -84,19 +92,19 @@ export function evaluateDigital(
       ref.pin < digitalPinCountOf(component.kind)
     );
   };
-
-  // Сети: каждый вывод начинает одинокую сеть (неприсоединённые тоже получают
-  // уровень), Провода объединяют сети.
-  const nets = createUnionFind();
-  for (const component of canvas.components) {
-    for (let pin = 0; pin < digitalPinCountOf(component.kind); pin += 1) {
-      nets.find(pinKey(component.id, pin));
-    }
-  }
   for (const wire of canvas.wires) {
     if (!hasPin(wire.from) || !hasPin(wire.to)) continue;
-    nets.union(keyOf(wire.from), keyOf(wire.to));
+    nets.union(pinKey(wire.from.componentId, wire.from.pin), pinKey(wire.to.componentId, wire.to.pin));
   }
+  return nets;
+}
+
+export function evaluateDigital(
+  canvas: DigitalCanvasState,
+  now: number,
+  initial?: ReadonlyMap<string, Bit>,
+): ReadonlyMap<string, Bit> {
+  const nets = digitalNetsOf(canvas);
 
   // Начальные уровни: источник водит свою сеть; сеть без источника — 0 или
   // уровень с прошлого прогона.
