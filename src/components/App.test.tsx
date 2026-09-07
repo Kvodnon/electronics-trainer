@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
@@ -313,7 +313,8 @@ describe('Схема-задание в потоке Курса', () => {
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
     // «ключ на транзисторе»: кнопка с резистором — в базу, коллектор через второй
-    // резистор и светодиод; замыкаем кнопку — насыщение, ток по умолчанию ≈ 14,6 мА
+    // резистор и светодиод. Базу ограничиваем до 10 кОм (ток кнопки — «малый»),
+    // замыкаем кнопку — насыщение, ток светодиода ≈ 14,6 мА
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Ключ' }));
     await user.click(screen.getByRole('button', { name: 'Резистор' }));
@@ -328,18 +329,21 @@ describe('Схема-задание в потоке Курса', () => {
       'Транзистор 5',
       'Светодиод 6',
     ]);
+    await setResistance(user, 'Резистор 3', '10кОм');
     await closeSwitch(user, 'Ключ 2');
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    // «делитель с потенциометром»: концы на батарею, движок по умолчанию даёт 4,5 В
+    // «делитель с потенциометром»: концы на батарею, поворот движка на 60 % даёт 3,6 В
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Потенциометр' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Потенциометр 2' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 3: Потенциометр 2' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Потенциометр 2' }));
+    fireEvent.change(screen.getByRole('slider', { name: /Положение движка/ }), { target: { value: '60' } });
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
     expect(screen.getByText(/Напряжение на движке потенциометра/)).toBeInTheDocument();

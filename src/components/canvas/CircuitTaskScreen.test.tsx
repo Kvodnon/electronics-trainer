@@ -1022,6 +1022,8 @@ describe('Задания М2: транзистор, потенциометр, з
       'Транзистор 5',
       'Светодиод 6',
     ]);
+    // базовый резистор 10 кОм — ток кнопки остаётся «малым» (условие Задания)
+    await setResistance(user, 'Резистор 3', '10кОм');
 
     // кнопка разомкнута: транзистор закрыт, светодиод не светится — ловушка честно названа
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
@@ -1055,12 +1057,12 @@ describe('Задания М2: транзистор, потенциометр, з
     expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
     expect(screen.getByText(/Напряжение на движке потенциометра/)).toBeInTheDocument();
 
-    // поворот движка в середину — 4,5 В, в границах условия
+    // поворот движка на 60 % — 3,6 В, в границах условия
     await user.click(screen.getByRole('button', { name: 'Потенциометр 2' }));
-    fireEvent.change(screen.getByRole('slider', { name: /Положение движка/ }), { target: { value: '50' } });
+    fireEvent.change(screen.getByRole('slider', { name: /Положение движка/ }), { target: { value: '60' } });
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
-    expect(screen.getByText(/4,5 В/)).toBeInTheDocument();
+    expect(screen.getByText(/3,6 В/)).toBeInTheDocument();
   });
 
   it('«зуммер»: резистор по умолчанию тих, после подбора — звучит', async () => {

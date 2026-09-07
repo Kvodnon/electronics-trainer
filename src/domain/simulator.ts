@@ -355,16 +355,33 @@ interface Branch {
   readonly nodeB: number;
 }
 
+/** Выводы транзистора: база, коллектор, эмиттер (слева, справа сверху, справа снизу). */
+const BASE_PIN = 0;
+const COLLECTOR_PIN = 1;
+const EMITTER_PIN = 2;
+
 /** Ветви Компонента: две у трёхвыводных, одна у остальных. */
 function branchesOf(
   component: PlacedComponent,
   nodeOf: (componentId: string, pin: number) => number,
 ): Branch[] {
   if (component.kind === 'transistor') {
-    // выводы: 0 — база, 1 — коллектор, 2 — эмиттер
+    // переход база—эмиттер и переход коллектор—эмиттер
     return [
-      { component, pinA: 0, pinB: 2, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 2) },
-      { component, pinA: 1, pinB: 2, nodeA: nodeOf(component.id, 1), nodeB: nodeOf(component.id, 2) },
+      {
+        component,
+        pinA: BASE_PIN,
+        pinB: EMITTER_PIN,
+        nodeA: nodeOf(component.id, BASE_PIN),
+        nodeB: nodeOf(component.id, EMITTER_PIN),
+      },
+      {
+        component,
+        pinA: COLLECTOR_PIN,
+        pinB: EMITTER_PIN,
+        nodeA: nodeOf(component.id, COLLECTOR_PIN),
+        nodeB: nodeOf(component.id, EMITTER_PIN),
+      },
     ];
   }
   if (component.kind === 'potentiometer') {
@@ -774,7 +791,7 @@ function stampTransistorBranch(
   state: TransistorState,
   stamps: BranchStamps,
 ): void {
-  if (branch.pinA === 0) {
+  if (branch.pinA === BASE_PIN) {
     // переход база—эмиттер
     if (!state.baseOn) {
       stamps.stampOpenBranch(branch);
@@ -863,7 +880,9 @@ function readingOfComponent(
   });
   if (component.kind === 'battery') {
     const emf = component.voltage ?? 0;
-    return reading((emf - voltage) / BATTERY_INTERNAL_RESISTANCE, voltage * ((emf - voltage) / BATTERY_INTERNAL_RESISTANCE));
+    const current = (emf - voltage) / BATTERY_INTERNAL_RESISTANCE;
+    // мощность у батареи отдаваемая: знак произведения сохраняется
+    return reading(current, voltage * current);
   }
   if (component.kind === 'capacitor') {
     // компаньон переходного режима: ток восстанавливается по его уравнению,
@@ -899,8 +918,8 @@ function transistorReading(
   nodeVoltage: readonly number[],
   transistors: ReadonlyMap<string, TransistorState>,
 ): ComponentReading {
-  const baseBranch = branches.find((branch) => branch.pinA === 0)!;
-  const collectorBranch = branches.find((branch) => branch.pinA === 1)!;
+  const baseBranch = branches.find((branch) => branch.pinA === BASE_PIN)!;
+  const collectorBranch = branches.find((branch) => branch.pinA === COLLECTOR_PIN)!;
   const emitter = nodeVoltage[baseBranch.nodeB];
   const vBE = nodeVoltage[baseBranch.nodeA] - emitter;
   const vCE = nodeVoltage[collectorBranch.nodeA] - emitter;

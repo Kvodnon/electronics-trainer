@@ -119,6 +119,25 @@ function checkComponentUsed(
   };
 }
 
+/**
+ * Кандидат для строки Разбора: попавший в границы измерение; если таких нет —
+ * ближайшее к границам. Общая фигура всех условий-диапазонов.
+ */
+function pickCandidate<T>(candidates: readonly T[], valueOf: (entry: T) => number, range: { from: number; to: number }): T {
+  const distance = (entry: T): number => {
+    const value = valueOf(entry);
+    if (value < range.from) return range.from - value;
+    if (value > range.to) return value - range.to;
+    return 0;
+  };
+  return (
+    candidates.find((entry) => {
+      const value = valueOf(entry);
+      return value >= range.from && value <= range.to;
+    }) ?? candidates.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best))
+  );
+}
+
 /** Проверка условия-измерения: годится любой Компонент вида в границах. */
 function checkMeasurement(
   solution: DcSolution,
@@ -144,14 +163,7 @@ function checkMeasurement(
     return value >= condition.range.from && value <= condition.range.to;
   };
   // в Разбор — попавшее в границы показание; если таких нет, ближайшее к границам
-  const distance = (reading: ComponentReading): number => {
-    const value = valueOf(reading);
-    if (value < condition.range.from) return condition.range.from - value;
-    if (value > condition.range.to) return value - condition.range.to;
-    return 0;
-  };
-  const candidate =
-    readings.find(inRange) ?? readings.reduce((best, reading) => (distance(reading) < distance(best) ? reading : best));
+  const candidate = pickCandidate(readings, valueOf, condition.range);
 
   const bounds = formatQuantityRange(condition.range.from, condition.range.to, traits.unit);
   return {
@@ -287,24 +299,17 @@ function checkWiperVoltage(
     };
   }
 
-  const measured = potentiometers.map((reading) => {
-    const wiper = solution.pinNodes.get(pinKey(reading.componentId, 1));
-    const bottom = solution.pinNodes.get(pinKey(reading.componentId, 2));
-    return {
-      id: reading.componentId,
-      voltage: Math.abs((wiper?.voltage ?? 0) - (bottom?.voltage ?? 0)),
-    };
-  });
+  // у каждого Компонента решения есть узлы всех выводов — движок (1) и конец (2)
+  const measured = potentiometers.map((reading) => ({
+    id: reading.componentId,
+    voltage: Math.abs(
+      solution.pinNodes.get(pinKey(reading.componentId, 1))!.voltage -
+        solution.pinNodes.get(pinKey(reading.componentId, 2))!.voltage,
+    ),
+  }));
   const inRange = (entry: { id: string; voltage: number }) =>
     entry.voltage >= condition.range.from && entry.voltage <= condition.range.to;
-  const distance = (entry: { id: string; voltage: number }) => {
-    if (entry.voltage < condition.range.from) return condition.range.from - entry.voltage;
-    if (entry.voltage > condition.range.to) return entry.voltage - condition.range.to;
-    return 0;
-  };
-  const candidate =
-    measured.find(inRange) ??
-    measured.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const candidate = pickCandidate(measured, (entry) => entry.voltage, condition.range);
   const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'В');
   return {
     condition,
@@ -340,15 +345,7 @@ function checkTimeConstant(
   }
 
   const inRange = ([, tau]: readonly [string, number]) => tau >= condition.range.from && tau <= condition.range.to;
-  const distance = ([, tau]: readonly [string, number]) => {
-    if (!Number.isFinite(tau)) return Number.POSITIVE_INFINITY;
-    if (tau < condition.range.from) return condition.range.from - tau;
-    if (tau > condition.range.to) return tau - condition.range.to;
-    return 0;
-  };
-  const candidate =
-    candidates.find(inRange) ??
-    candidates.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const candidate = pickCandidate(candidates, ([, tau]) => tau, condition.range);
   const [componentId, tau] = candidate;
   const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'с');
   const measured = Number.isFinite(tau)
@@ -389,14 +386,7 @@ function checkVoltageAtMoment(
   const measured = capacitorIds.map((id) => ({ id, voltage: Math.abs(voltageAt(transient, id, condition.time) ?? 0) }));
   const inRange = (entry: { id: string; voltage: number }) =>
     entry.voltage >= condition.range.from && entry.voltage <= condition.range.to;
-  const distance = (entry: { id: string; voltage: number }) => {
-    if (entry.voltage < condition.range.from) return condition.range.from - entry.voltage;
-    if (entry.voltage > condition.range.to) return entry.voltage - condition.range.to;
-    return 0;
-  };
-  const candidate =
-    measured.find(inRange) ??
-    measured.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const candidate = pickCandidate(measured, (entry) => entry.voltage, condition.range);
   const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'В');
   return {
     condition,

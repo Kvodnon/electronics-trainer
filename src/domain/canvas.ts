@@ -407,7 +407,7 @@ function potentiometerPatch(patch: ComponentValuePatch): ComponentValuePatch | n
 }
 
 /** Положение движка: доля от 0 (у вывода 0) до 1 (у вывода 2). */
-export function isWiperValue(value: number): boolean {
+function isWiperValue(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 1;
 }
 

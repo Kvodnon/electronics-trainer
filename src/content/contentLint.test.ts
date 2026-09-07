@@ -546,22 +546,19 @@ describe('Схема-задания М2 решаемы: транзистор, п
     expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
   });
 
-  it('«делитель с потенциометром»: движок посередине даёт 4,5 В — в границах 3–5 В', () => {
+  it('«делитель с потенциометром»: движок на 60 % даёт 3,6 В — в границах 3–4 В', () => {
     // «плюс» батареи — на конец потенциометра (вывод 0), вывод 2 — на «минус»;
     // обычный ring соединяет выводы 1→0 и зацепил бы движок вместо конца
-    assertSolvable(
-      circuitTaskOf('m2-pot-divider'),
-      dividerCanvas(defaultValuesOf('potentiometer').wiper),
-    );
+    assertSolvable(circuitTaskOf('m2-pot-divider'), dividerCanvas(0.6));
   });
 
-  it('«делитель с потенциометром»: движок у края — напряжение вне границ, Задание не сдано', () => {
+  it('«делитель с потенциометром»: движок по умолчанию (50 %) не проходит — диапазон требует поворота', () => {
     const verdict = evaluate(circuitTaskOf('m2-pot-divider'), {
       kind: 'circuit-answer',
-      canvas: dividerCanvas(0.99),
+      canvas: dividerCanvas(defaultValuesOf('potentiometer').wiper),
     });
     if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
-    // схема живая (ток течёт), но измерение мимо границы — «работает, но не по условию»
+    // схема живая (ток течёт), но 4,5 В выше границы — «работает, но не по условию»
     expect(verdict.outcome).not.toBe('correct');
     expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
   });
