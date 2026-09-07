@@ -8,14 +8,22 @@ interface CourseScreenProps {
   onEnterModule: (moduleId: string) => void;
   /** Песочница доступна с самого начала Курса. */
   onOpenSandbox: () => void;
+  /** Цифровой Холст М3: свободная сборка логики, без Модуля-блокировщика. */
+  onOpenDigitalCanvas: () => void;
 }
 
 /**
- * Экран Курса: главный меню Тренажёра. Наверху — вход в Песочницу, ниже —
- * линейный список Модулей. Следующий Модуль заблокирован, пока не пройден
- * предыдущий; у каждого Модуля виден его Прогресс.
+ * Экран Курса: главный меню Тренажёра. Наверху — вход в Песочницу и цифровой
+ * Холст, ниже — линейный список Модулей. Следующий Модуль заблокирован, пока
+ * не пройден предыдущий; у каждого Модуля виден его Прогресс.
  */
-export function CourseScreen({ course, progress, onEnterModule, onOpenSandbox }: CourseScreenProps) {
+export function CourseScreen({
+  course,
+  progress,
+  onEnterModule,
+  onOpenSandbox,
+  onOpenDigitalCanvas,
+}: CourseScreenProps) {
   return (
     <section className="course" aria-labelledby="course-heading">
       <h2 id="course-heading">Курс</h2>
@@ -35,6 +43,21 @@ export function CourseScreen({ course, progress, onEnterModule, onOpenSandbox }:
         </div>
         <button type="button" className="button-primary" onClick={onOpenSandbox}>
           Открыть
+        </button>
+      </section>
+
+      <section className="panel sandbox-entry" aria-labelledby="digital-entry-heading">
+        <div className="sandbox-entry-text">
+          <h3 id="digital-entry-heading" className="module-title">
+            Цифровая логика
+          </h3>
+          <p className="module-summary">
+            Отдельный Холст со строгими сигналами 0/1: элементы И, ИЛИ и НЕ, Кнопка,
+            Индикатор и Тактовый генератор — свободная сборка без аналогового Симулятора.
+          </p>
+        </div>
+        <button type="button" className="button-primary" onClick={onOpenDigitalCanvas}>
+          Открыть цифровой Холст
         </button>
       </section>
 

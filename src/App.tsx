@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useState } from 'react';
 import { CourseScreen } from './components/CourseScreen';
 import { DataControls } from './components/DataControls';
+import { DigitalCanvasScreen } from './components/DigitalCanvasScreen';
 import { ModuleScreen } from './components/ModuleScreen';
 import { SandboxScreen } from './components/SandboxScreen';
 import { course } from './content/course';
@@ -36,6 +37,7 @@ export function App() {
   const [circuits, setCircuits] = useState(() => loadSandboxCircuits());
   const [moduleId, setModuleId] = useState<string | null>(null);
   const [sandboxOpen, setSandboxOpen] = useState(false);
+  const [digitalCanvasOpen, setDigitalCanvasOpen] = useState(false);
 
   useEffect(() => {
     saveProgress(progress);
@@ -82,7 +84,13 @@ export function App() {
       </header>
 
       <main>
-        {sandboxOpen ? (
+        {digitalCanvasOpen ? (
+          <DigitalCanvasScreen
+            symbolStandard={symbolStandard}
+            onSymbolStandardChange={handleSymbolStandardChange}
+            onExit={() => setDigitalCanvasOpen(false)}
+          />
+        ) : sandboxOpen ? (
           <SandboxScreen
             palette={sandboxPaletteOf(course, progress)}
             circuits={circuits}
@@ -109,6 +117,7 @@ export function App() {
               progress={progress}
               onEnterModule={setModuleId}
               onOpenSandbox={() => setSandboxOpen(true)}
+              onOpenDigitalCanvas={() => setDigitalCanvasOpen(true)}
             />
             <DataControls
               onExport={handleExport}

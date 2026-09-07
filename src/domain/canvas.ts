@@ -3,7 +3,7 @@
  * без DOM и без зависимости от React (см. spec: «редьюсеры состояния Холста»).
  * Термины — по CONTEXT.md: Холст, Палитра, Компонент, Провод.
  */
-import { clampPosition, snapToGrid } from './canvasGeometry';
+import { snapPlacement } from './canvasGeometry';
 
 /** Виды Компонентов Палитры М1. Растёт вместе с Модулями (М2+). */
 export const componentKinds = [
@@ -208,8 +208,12 @@ export function defaultValuesOf(
 /**
  * Свободное место для Компонента по клику в Палитре: построчный обход
  * Холста, первая позиция без соседей в радиусе ~габарита символа.
+ * Аналоговому и цифровому Холстам нужна одна раскладка, поэтому параметр —
+ * минимальная форма состояния (только позиции Компонентов).
  */
-export function suggestPlacementPosition(canvas: CanvasState): { x: number; y: number } {
+export function suggestPlacementPosition(canvas: {
+  readonly components: readonly { readonly x: number; readonly y: number }[];
+}): { x: number; y: number } {
   const occupied = (x: number, y: number) =>
     canvas.components.some((c) => Math.abs(c.x - x) < 110 && Math.abs(c.y - y) < 90);
   for (let y = 100; y <= 480; y += 120) {
@@ -221,23 +225,8 @@ export function suggestPlacementPosition(canvas: CanvasState): { x: number; y: n
   return { x: 100, y: 100 };
 }
 
-function placement(x: number, y: number): { x: number; y: number } {
-  return clampPosition({ x: snapToGrid(x), y: snapToGrid(y) });
-}
-
-function samePin(a: PinRef, b: PinRef): boolean {
-  return a.componentId === b.componentId && a.pin === b.pin;
-}
-
-function isValidPin(component: PlacedComponent, pin: number): boolean {
-  return Number.isInteger(pin) && pin >= 0 && pin < pinCountOf(component.kind);
-}
-
-function nextRotation(rotation: Rotation): Rotation {
-  return ((rotation + 90) % 360) as Rotation;
-}
-
-function nextId(prefix: string, taken: readonly string[]): string {
+/** Следующий свободный идентификатор вида «c1», «w2»: максимум среди занятых. */
+export function nextId(prefix: string, taken: readonly string[]): string {
   let max = 0;
   for (const id of taken) {
     if (id.startsWith(prefix)) {
@@ -248,6 +237,20 @@ function nextId(prefix: string, taken: readonly string[]): string {
   return `${prefix}${max + 1}`;
 }
 
+/** Это один и тот же вывод? */
+export function samePin(a: PinRef, b: PinRef): boolean {
+  return a.componentId === b.componentId && a.pin === b.pin;
+}
+
+function isValidPin(component: PlacedComponent, pin: number): boolean {
+  return Number.isInteger(pin) && pin >= 0 && pin < pinCountOf(component.kind);
+}
+
+/** Следующий поворот шагами 90° по часовой стрелке. */
+export function nextRotation(rotation: Rotation): Rotation {
+  return ((rotation + 90) % 360) as Rotation;
+}
+
 /** Редьюсер Холста: чистая функция переходов редактора с историей undo/redo. */
 export function canvasReducer(history: CanvasHistory, action: CanvasAction): CanvasHistory {
   switch (action.type) {
@@ -255,7 +258,7 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
       const component: PlacedComponent = {
         id: nextId('c', history.present.components.map((c) => c.id)),
         kind: action.kind,
-        ...placement(action.x, action.y),
+        ...snapPlacement({ x: action.x, y: action.y }),
         rotation: 0,
         ...DEFAULT_VALUES[action.kind],
       };
@@ -267,7 +270,7 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
     case 'component-moved':
       return withUpdatedComponent(history, action.componentId, (component) => ({
         ...component,
-        ...placement(action.x, action.y),
+        ...snapPlacement({ x: action.x, y: action.y }),
       }));
     case 'component-rotated':
       return withUpdatedComponent(history, action.componentId, (component) => ({

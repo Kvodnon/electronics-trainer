@@ -1594,3 +1594,67 @@ body {
 .data-message-ok {
   color: var(--correct);
 }
+
+/* Цифровой Холст (М3): строгие уровни 0/1 видны взглядом — Проводы и выводы
+   окрашены уровнем сети, Индикатор светится на 1. */
+
+.wire-level-low .wire-line {
+  stroke: #5a6b82;
+}
+
+.wire-level-high .wire-line {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.digital-pin {
+  fill: #0d141c;
+  stroke: #5a6b82;
+  stroke-width: 1.5;
+  cursor: crosshair;
+}
+
+.digital-pin:hover,
+.digital-pin-source {
+  stroke: var(--accent);
+}
+
+.digital-pin-high {
+  fill: var(--accent);
+  stroke: var(--accent);
+}
+
+.digital-pin-digit {
+  font-family: var(--monospace);
+  font-size: 10px;
+  fill: var(--text-muted);
+  pointer-events: none;
+}
+
+.digital-pin-digit-high {
+  fill: #0d141c;
+  font-weight: 700;
+}
+
+/* Метка функции элемента («&», «1», S) — поверх обводки, без заливки контуром */
+.digital-mark {
+  font-family: var(--monospace);
+  font-size: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.digital-component-toggle {
+  cursor: pointer;
+}
+
+/* Свечение Индикатора: ореол вокруг и заливка тела на уровне 1 */
+.digital-indicator-glow {
+  fill: var(--accent);
+  opacity: 0.3;
+}
+
+.digital-indicator-on {
+  fill: var(--accent);
+  fill-opacity: 0.45;
+}

@@ -1,10 +1,6 @@
-import { useRef, useState, type ReactNode } from 'react';
-import type {
-  MouseEvent as ReactMouseEvent,
-  DragEvent as ReactDragEvent,
-  KeyboardEvent as ReactKeyboardEvent,
-} from 'react';
+import { type ReactNode } from 'react';
 import {
+  isComponentKind,
   pinCountOf,
   suggestPlacementPosition,
   type CanvasAction,
@@ -15,15 +11,14 @@ import {
 } from '../../domain/canvas';
 import {
   CANVAS_SIZE,
-  clampPosition,
   pinPointOf,
   routeWire,
-  snapToGrid,
   type DirectedPoint,
   type Point,
 } from '../../domain/canvasGeometry';
 import { CanvasSymbolBody, PaletteSymbol, componentTitles, componentValueLabel } from './CanvasSymbols';
 import { CanvasSelectionPanel } from './CanvasSelectionPanel';
+import { useCanvasGestures } from './canvasGestures';
 import { formatQuantity } from '../../domain/quantity';
 import { probePoints, type MultimeterMode, type MultimeterProbes } from '../../domain/multimeter';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
@@ -37,28 +32,14 @@ const LABEL_OFFSET_Y = -38;
 
 /**
  * Редактор Холста: тонкий слой над домен-редьюсером. Состояние Холста живёт
- * выше (экран Схема-задания) — редактор управляемый: жесты мышью превращаются
- * в действия `canvasReducer`, отрисовка читает переданную историю. Вся логика
- * редактора (постановка, перемещение, поворот, удаление, Провода, номиналы,
- * undo/redo, сброс) — в редьюсере; здесь только мышиные жесты и отрисовка.
- * Перетаскивание Компонента рисуется поверх состояния и фиксируется в
- * редьюсер одним действием на отпускании кнопки.
+ * выше (экран Схема-задания) — редактор управляемый: жесты мышью (общая
+ * кинематика `useCanvasGestures`) превращаются в действия `canvasReducer`,
+ * отрисовка читает переданную историю. Вся логика редактора (постановка,
+ * перемещение, поворот, удаление, Провода, номиналы, undo/redo, сброс) — в
+ * редьюсере; здесь только отрисовка и щупы Мультиметра. Перетаскивание
+ * Компонента рисуется поверх состояния и фиксируется в редьюсер одним
+ * действием на отпускании кнопки.
  */
-
-type Selection = { kind: 'component' | 'wire'; id: string } | null;
-
-interface DragState {
-  readonly componentId: string;
-  /** Указатель − центр Компонента на старте, чтобы курсор не «прыгал». */
-  readonly grabOffset: Point;
-  readonly position: Point;
-  readonly moved: boolean;
-}
-
-interface WireDraftState {
-  readonly from: PinRef;
-  readonly cursor: Point;
-}
 
 /** Оверлей расчёта: показания на Компонентах и токи Проводов после «Проверить». */
 export interface CanvasOverlay {
@@ -102,14 +83,56 @@ interface CanvasEditorProps {
 
 export function CanvasEditor({ palette, history, onAction, symbolStandard, actions, liveReadings, capacitorFill, overlay, faultSpot, multimeter = null }: CanvasEditorProps) {
   const canvas = history.present;
-  const [selection, setSelection] = useState<Selection>(null);
-  const [drag, setDrag] = useState<DragState | null>(null);
-  const [wireDraft, setWireDraft] = useState<WireDraftState | null>(null);
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  const {
+    selection,
+    setSelection,
+    drag,
+    wireDraft,
+    setWireDraft,
+    svgRef,
+    rootRef,
+    beginDrag,
+    trackPointer,
+    endDrag,
+    handlePinClick,
+    clearCanvas,
+    removeSelection,
+    rotateSelection,
+    handleKeyDown,
+    handleDrop,
+  } = useCanvasGestures({
+    componentPosition: (componentId) => {
+      const component = componentById.get(componentId);
+      return component !== undefined ? { x: component.x, y: component.y } : undefined;
+    },
+    pinPoint: (ref) => {
+      const component = componentById.get(ref.componentId);
+      return component !== undefined ? pinPointOf(component, ref.pin) : undefined;
+    },
+    moveComponent: (componentId, x, y) => onAction({ type: 'component-moved', componentId, x, y }),
+    drawWire: (from, to) => onAction({ type: 'wire-drawn', from, to }),
+    removeComponent: (componentId) => onAction({ type: 'component-removed', componentId }),
+    removeWire: (wireId) => onAction({ type: 'wire-removed', wireId }),
+    rotateComponent: (componentId) => onAction({ type: 'component-rotated', componentId }),
+    placeKind: (kind, point) => {
+      if (isComponentKind(kind)) onAction({ type: 'component-placed', kind, x: point.x, y: point.y });
+    },
+    onUnmovedClick: (componentId) => {
+      // клик без сдвига в режиме тока — щупы на ветвь Компонента
+      if (multimeter !== null && multimeter.mode === 'current') multimeter.onBranchProbe(componentId);
+    },
+    onPinIntercept: (ref) => {
+      if (multimeter === null) return false;
+      // режим измерений: вывод — точка измерения, а не начало Провода
+      if (multimeter.mode === 'voltage') multimeter.onPinProbe(ref);
+      else multimeter.onBranchProbe(ref.componentId);
+      return true;
+    },
+    onEscape: () => multimeter?.onClearProbes(),
+  });
 
   const components = canvas.components;
-  /** Компоненты по идентификатору: выборка для жестов, имён и Проводов. */
   const componentById = new Map(components.map((c) => [c.id, c]));
   const selectedComponent =
     selection !== null && selection.kind === 'component'
@@ -122,140 +145,15 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
       ? { ...component, x: drag.position.x, y: drag.position.y }
       : component;
 
-  function pointFromEvent(event: { clientX: number; clientY: number }): Point {
-    const svg = svgRef.current;
-    if (svg === null) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
-    return {
-      x: ((event.clientX - rect.left) / rect.width) * CANVAS_SIZE.width,
-      y: ((event.clientY - rect.top) / rect.height) * CANVAS_SIZE.height,
-    };
-  }
-
   function placeFromPalette(kind: ComponentKind) {
     const spot = suggestPlacementPosition(canvas);
     onAction({ type: 'component-placed', kind, x: spot.x, y: spot.y });
     setWireDraft(null);
   }
 
-  function beginDrag(component: PlacedComponent, event: ReactMouseEvent) {
-    // Правая кнопка не тащит
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    const pointer = pointFromEvent(event);
-    setSelection({ kind: 'component', id: component.id });
-    setWireDraft(null);
-    setDrag({
-      componentId: component.id,
-      grabOffset: { x: pointer.x - component.x, y: pointer.y - component.y },
-      position: { x: component.x, y: component.y },
-      moved: false,
-    });
-  }
-
-  function trackPointer(event: ReactMouseEvent) {
-    const pointer = pointFromEvent(event);
-    if (drag !== null) {
-      const target = clampPosition({
-        x: snapToGrid(pointer.x - drag.grabOffset.x),
-        y: snapToGrid(pointer.y - drag.grabOffset.y),
-      });
-      setDrag({ ...drag, position: target, moved: true });
-      return;
-    }
-    if (wireDraft !== null) {
-      setWireDraft({ ...wireDraft, cursor: { x: snapToGrid(pointer.x), y: snapToGrid(pointer.y) } });
-    }
-  }
-
-  function endDrag() {
-    if (drag === null) return;
-    const original = componentById.get(drag.componentId);
-    const movedPosition =
-      original !== undefined && (original.x !== drag.position.x || original.y !== drag.position.y);
-    if (movedPosition) {
-      onAction({
-        type: 'component-moved',
-        componentId: drag.componentId,
-        x: drag.position.x,
-        y: drag.position.y,
-      });
-    } else if (multimeter !== null && multimeter.mode === 'current') {
-      // клик без сдвига в режиме тока — щупы на ветвь Компонента
-      multimeter.onBranchProbe(drag.componentId);
-    }
-    setDrag(null);
-  }
-
-  function handlePinClick(ref: PinRef, event: ReactMouseEvent) {
-    event.stopPropagation();
-    const component = componentById.get(ref.componentId);
-    if (component === undefined) return;
-    if (multimeter !== null) {
-      // режим измерений: вывод — точка измерения, а не начало Провода
-      setWireDraft(null);
-      if (multimeter.mode === 'voltage') multimeter.onPinProbe(ref);
-      else multimeter.onBranchProbe(ref.componentId);
-      return;
-    }
-    if (wireDraft === null) {
-      const origin = pinPointOf(component, ref.pin);
-      setSelection(null);
-      setWireDraft({ from: ref, cursor: { x: origin.x, y: origin.y } });
-      return;
-    }
-    onAction({ type: 'wire-drawn', from: wireDraft.from, to: ref });
-    setWireDraft(null);
-  }
-
   function clearCanvasInteraction() {
-    setSelection(null);
-    setWireDraft(null);
+    clearCanvas();
     multimeter?.onClearProbes();
-  }
-
-  function removeSelection() {
-    if (selection === null) return;
-    onAction(
-      selection.kind === 'component'
-        ? { type: 'component-removed', componentId: selection.id }
-        : { type: 'wire-removed', wireId: selection.id },
-    );
-    setSelection(null);
-  }
-
-  function rotateSelection() {
-    if (selectedComponent === null) return;
-    onAction({ type: 'component-rotated', componentId: selectedComponent.id });
-  }
-
-  function handleKeyDown(event: ReactKeyboardEvent) {
-    // набор в поле номинала не управляет редактором
-    if (event.target instanceof HTMLInputElement) return;
-    if (event.key === 'Escape') {
-      setWireDraft(null);
-      setSelection(null);
-      multimeter?.onClearProbes();
-      return;
-    }
-    if (event.key === 'Delete' || event.key === 'Backspace') {
-      event.preventDefault();
-      removeSelection();
-      return;
-    }
-    // R и «к» — одна клавиша в латинской и русской раскладках
-    if (event.key === 'r' || event.key === 'R' || event.key === 'к' || event.key === 'К') {
-      rotateSelection();
-    }
-  }
-
-  function handleDrop(event: ReactDragEvent) {
-    const kind = event.dataTransfer.getData('text/component-kind') as ComponentKind;
-    if (!kind) return;
-    event.preventDefault();
-    const point = pointFromEvent(event);
-    onAction({ type: 'component-placed', kind, x: point.x, y: point.y });
   }
 
   const wireFrom = (ref: PinRef): DirectedPoint => {
@@ -545,7 +443,7 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
 }
 
 /** Черновик Провода: от зажатого вывода до курсора. */
-function DraftWire({ draft, from }: { draft: WireDraftState; from: DirectedPoint }) {
+function DraftWire({ draft, from }: { draft: { readonly from: PinRef; readonly cursor: Point }; from: DirectedPoint }) {
   const route = routeWire(from, { x: draft.cursor.x, y: draft.cursor.y, dx: 0, dy: 0 });
   const points = route.map((point) => `${point.x},${point.y}`).join(' ');
   return <polyline className="wire-draft" points={points} />;

@@ -31,6 +31,11 @@ export function snapToGrid(value: number): number {
   return normalizeZero(Math.round(value / GRID) * GRID);
 }
 
+/** Позиция Компонента из жеста: узел сетки внутри границ Холста. */
+export function snapPlacement(position: Point): Point {
+  return clampPosition({ x: snapToGrid(position.x), y: snapToGrid(position.y) });
+}
+
 /** −0 не отличим от 0 глазом, но не равен ему при строгом сравнении. */
 function normalizeZero(value: number): number {
   return value === 0 ? 0 : value;
@@ -76,7 +81,7 @@ const LOCAL_PINS_BY_KIND: Partial<Record<ComponentKind, readonly DirectedPoint[]
 };
 
 /** Поворот точки с направлением на 90° по часовой стрелке (ось Y вниз). */
-function rotate90(point: DirectedPoint): DirectedPoint {
+export function rotate90(point: DirectedPoint): DirectedPoint {
   return {
     x: normalizeZero(-point.y),
     y: point.x,
