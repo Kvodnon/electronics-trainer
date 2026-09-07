@@ -46,5 +46,5 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 
 ## Historical notes
 
-- This repo used the local-markdown tracker before 2026-09-07; tickets 01–22 were migrated from `.scratch/electronics-trainer/issues/` into issues #1–#22 (1:1 numbering), with `Blocked by:` edges as native issue dependencies. Those files remain as a read-only archive.
+- This repo used the local-markdown tracker before 2026-09-07; tickets 01–22 were migrated from `.scratch/electronics-trainer/issues/` into issues #1–#22 (1:1 numbering), with `Blocked by:` edges as native issue dependencies. The local ticket files were deleted afterwards (recoverable from git history); the founding spec lives at `docs/spec.md`.
 - `ready-for-agent` labels tickets that are agent-ready and unblocked.
