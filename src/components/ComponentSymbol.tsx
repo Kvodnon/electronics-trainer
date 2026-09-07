@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import type { ComponentSymbolId } from '../domain/course';
+import type { DigitalKind } from '../domain/digitalCanvas';
+import { DigitalSymbolBody, digitalComponentTitles } from './digital/DigitalSymbols';
 
 /**
  * Условное обозначение Компонента в двух стандартах рядом:
@@ -18,6 +20,30 @@ interface SymbolEntry {
 const leadLeftTo = (endX: number) => <path d={`M4 24 H${endX}`} />;
 /** Вывод справа от символа — от координаты x. */
 const leadRightFrom = (startX: number) => <path d={`M${startX} 24 H136`} />;
+
+/**
+ * Тело цифрового Компонента из слоя цифровых символов: оно рисуется вокруг
+ * (0,0) в локальных координатах Холста — сдвиг в центр фигуры 140×48.
+ * У логических элементов уровень вывода на рисунок не влияет.
+ */
+function digitalDrawing(kind: DigitalKind, standard: 'gost' | 'ansi'): ReactNode {
+  return (
+    <g transform="translate(70 24)">
+      <DigitalSymbolBody component={{ id: 'symbol', kind, x: 0, y: 0, rotation: 0 }} standard={standard} />
+    </g>
+  );
+}
+
+function digitalEntry(kind: Extract<DigitalKind, 'and' | 'or' | 'not'>): SymbolEntry {
+  return { name: digitalComponentTitles[kind], gost: digitalDrawing(kind, 'gost'), ansi: digitalDrawing(kind, 'ansi') };
+}
+
+/** Элементы М3: по ГОСТ 2.743 (метка функции) и по ANSI (контурные фигуры). */
+const digitalRegistry: Record<'and' | 'or' | 'not', SymbolEntry> = {
+  and: digitalEntry('and'),
+  or: digitalEntry('or'),
+  not: digitalEntry('not'),
+};
 
 const registry: Record<ComponentSymbolId, SymbolEntry> = {
   resistor: {
@@ -191,6 +217,7 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
       </>
     ),
   },
+  ...digitalRegistry,
 };
 
 function SymbolFigure({ standard, drawing }: { standard: string; drawing: ReactNode }) {

@@ -3,7 +3,7 @@
  * Термины — по CONTEXT.md: Курс, Модуль, Теория, Задание, Прогресс.
  */
 import type { ComponentKind } from './canvas';
-import type { CircuitTask, Task } from './task';
+import type { CircuitTask, LogicTask, Task } from './task';
 
 /**
  * Состояние Задания в Прогрессе:
@@ -153,13 +153,19 @@ export function isModuleLocked(
   return blockingModuleOf(course, progress, moduleId) !== null;
 }
 
+/**
+ * Задание-Экзамен: аналоговое или цифровое Схема-задание, помеченное
+ * финальным в контенте Модуля.
+ */
+export type ExamTask = CircuitTask | LogicTask;
+
 /** Это Экзамен: финальное Схема-задание Модуля (помечено в контенте). */
-export function isExamTask(task: Task): task is CircuitTask {
-  return task.kind === 'circuit-task' && task.isExam === true;
+export function isExamTask(task: Task): task is ExamTask {
+  return (task.kind === 'circuit-task' || task.kind === 'logic-task') && task.isExam === true;
 }
 
 /** Экзамен Модуля или null, если Модуль экзамена не имеет. */
-export function examOf(module: CourseModule): CircuitTask | null {
+export function examOf(module: CourseModule): ExamTask | null {
   return module.tasks.find(isExamTask) ?? null;
 }
 
@@ -244,7 +250,12 @@ export type ComponentSymbolId =
   | 'led'
   | 'transistor'
   | 'potentiometer'
-  | 'buzzer';
+  | 'buzzer'
+  // Цифровые виды М3: совпадают с DigitalKind — отрисовка берётся из слоя
+  // цифровых символов (DigitalSymbols), где уже живут оба стандарта.
+  | 'and'
+  | 'or'
+  | 'not';
 
 /** Формула на карточке Теории. */
 export interface Formula {

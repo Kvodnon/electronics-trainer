@@ -6,7 +6,7 @@ import { ModuleScreen } from '../ModuleScreen';
 import { LogicTaskScreen } from './LogicTaskScreen';
 import { module3 } from '../../content/m3';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
-import { emptyProgress } from '../../domain/course';
+import { emptyProgress, progressReducer } from '../../domain/course';
 import type { LogicTask } from '../../domain/task';
 import type { SymbolStandard } from '../../domain/symbols';
 
@@ -103,6 +103,14 @@ async function assembleXor(user: ReturnType<typeof userEvent.setup>) {
 
 afterEach(cleanup);
 
+/** Листает все карточки Теории и открывает очередь Заданий Модуля. */
+async function openTasksPhase(user: ReturnType<typeof userEvent.setup>) {
+  while (screen.queryByRole('button', { name: 'К Заданиям' }) === null) {
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  }
+  await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+}
+
 describe('Кнопка «Проверить» на цифровом Схема-задании', () => {
   it('пустой Холст → структурный Диагноз без таблицы истинности', async () => {
     const user = userEvent.setup();
@@ -167,7 +175,7 @@ describe('Кнопка «Проверить» на цифровом Схема-�
 });
 
 describe('Модуль М3 ведёт к цифровому Схема-заданию', () => {
-  it('после Теории Задание М3 открывается на цифровом Холсте с проверкой', async () => {
+  it('после Теории очередь М3 начинается с Вопросов', async () => {
     const user = userEvent.setup();
     render(
       <ModuleScreen
@@ -180,10 +188,33 @@ describe('Модуль М3 ведёт к цифровому Схема-зада�
       />,
     );
 
-    for (let card = 0; card < 3; card += 1) {
-      await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    }
-    await user.click(screen.getByRole('button', { name: 'К Заданиям' }));
+    await openTasksPhase(user);
+
+    expect(screen.getByText(/Почему 0 не превратится в 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/полный сумматор/)).not.toBeInTheDocument();
+  });
+
+  it('Вопросы М3 пройдены — очередь доходит до цифрового Холста с проверкой', async () => {
+    const user = userEvent.setup();
+    const questions = module3.tasks
+      .filter((task) => task.kind === 'choice-question' || task.kind === 'numeric-question')
+      .map((task) => task.id);
+    const progress = questions.reduce(
+      (acc, taskId) => progressReducer(acc, { type: 'task-passed', taskId }),
+      emptyProgress,
+    );
+    render(
+      <ModuleScreen
+        module={module3}
+        progress={progress}
+        symbolStandard="gost"
+        onSymbolStandardChange={() => undefined}
+        onProgressAction={() => undefined}
+        onExit={() => undefined}
+      />,
+    );
+
+    await openTasksPhase(user);
 
     expect(screen.getByText('Схема-задание')).toBeInTheDocument();
     expect(screen.getByText(/Исключающее ИЛИ/)).toBeInTheDocument();
@@ -192,5 +223,63 @@ describe('Модуль М3 ведёт к цифровому Схема-зада�
     }
     expect(screen.getByRole('button', { name: 'Проверить' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Подсказка' })).toBeInTheDocument();
+  });
+});
+
+describe('Экзамен М3 — цифровое Схема-задание (тикет 19)', () => {
+  /** Прогресс, в котором перечисленные Задания пройдены. */
+  function passed(...taskIds: readonly string[]) {
+    return taskIds.reduce(
+      (progress, taskId) => progressReducer(progress, { type: 'task-passed', taskId }),
+      emptyProgress,
+    );
+  }
+
+  it('на экране Экзамена — метка «Экзамен»', () => {
+    renderCheckableTask(logicTaskOf('m3-exam'));
+    expect(screen.getByText('Экзамен')).toBeInTheDocument();
+    expect(screen.queryByText('Схема-задание')).not.toBeInTheDocument();
+  });
+
+  it('Экзамен закрыт, пока не пройдены остальные Задания Модуля', async () => {
+    const user = userEvent.setup();
+    render(
+      <ModuleScreen
+        module={module3}
+        progress={emptyProgress}
+        symbolStandard="gost"
+        onSymbolStandardChange={() => undefined}
+        onProgressAction={() => undefined}
+        onExit={() => undefined}
+      />,
+    );
+
+    await openTasksPhase(user);
+
+    // очередь начинается с Вопросов: Экзамена на экране нет, точка Экзамена — закрытая
+    expect(screen.getByText(/Почему 0 не превратится в 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/полный сумматор/)).not.toBeInTheDocument();
+    expect(document.querySelector('.task-dot-exam-locked')).not.toBeNull();
+  });
+
+  it('остальные Задания пройдены — Экзамен последний в очереди', async () => {
+    const user = userEvent.setup();
+    const others = module3.tasks.filter((task) => task.id !== 'm3-exam').map((task) => task.id);
+    render(
+      <ModuleScreen
+        module={module3}
+        progress={passed(...others)}
+        symbolStandard="gost"
+        onSymbolStandardChange={() => undefined}
+        onProgressAction={() => undefined}
+        onExit={() => undefined}
+      />,
+    );
+
+    await openTasksPhase(user);
+
+    expect(screen.getByText('Экзамен')).toBeInTheDocument();
+    expect(screen.getByText(/полный сумматор/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Проверить' })).toBeInTheDocument();
   });
 });

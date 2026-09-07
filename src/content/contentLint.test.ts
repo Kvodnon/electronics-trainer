@@ -18,12 +18,23 @@ import type {
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
-import { emptyProgress, examOf, modulePaletteOf, progressReducer, sandboxPaletteOf } from '../domain/course';
+import {
+  emptyProgress,
+  examOf,
+  isExamTask,
+  modulePaletteOf,
+  progressReducer,
+  sandboxPaletteOf,
+} from '../domain/course';
 import {
   andGateTrap,
+  fullAdderFromGates,
   halfAdderFromGates,
+  majorityFromAndOr,
   openLoopNorPair,
+  orChainMajorityTrap,
   rsLatchFromNorCompositions,
+  xnorFromAndOrNot,
   xorFromProductOfSums,
   xorFromSumOfProducts,
 } from '../testing/digitalCircuits';
@@ -53,7 +64,8 @@ const MEASUREMENT_KINDS = new Set([
 const TRANSIENT_KINDS = new Set(['rc-time-constant', 'capacitor-voltage-at']);
 
 function questionsOf(module: CourseModule): Task[] {
-  return module.tasks.filter((task) => task.kind !== 'circuit-task');
+  // Вопросы — Задания без сборки: не аналоговые и не цифровые Схема-задания.
+  return module.tasks.filter((task) => task.kind === 'choice-question' || task.kind === 'numeric-question');
 }
 
 function circuitTasksOf(module: CourseModule): CircuitTask[] {
@@ -106,13 +118,13 @@ describe('Линтер: модули и идентификаторы', () => {
     }
   });
 
-  it('Экзамен — последнее Схема-задание Модуля, и он один', () => {
+  it('Экзамен — последнее Задание Модуля, и он один (аналоговый или цифровой)', () => {
     for (const module of course.modules) {
-      const exams = module.tasks.filter((task) => task.kind === 'circuit-task' && task.isExam);
+      const exams = module.tasks.filter(isExamTask);
       expect(exams.length, `в Модуле ${module.id} Экзамен не один`).toBeLessThanOrEqual(1);
       const last = module.tasks[module.tasks.length - 1];
       if (exams.length > 0) {
-        expect(last.kind === 'circuit-task' && last.isExam, `в Модуле ${module.id} Экзамен не последний`).toBe(true);
+        expect(isExamTask(last), `в Модуле ${module.id} Экзамен не последний`).toBe(true);
       }
     }
   });
@@ -342,7 +354,7 @@ describe('Объём контента М2 (тикет 16)', () => {
 
   it('Экзамен объединяет темы Модуля: кнопка, транзистор, светодиод и RC-цепь в одном Задании', () => {
     const exam = examOf(module2);
-    if (!exam) throw new Error('фикстура: в М2 нет Экзамена');
+    if (!exam || exam.kind !== 'circuit-task') throw new Error('фикстура: в М2 нет аналогового Экзамена');
     const used = new Set(
       exam.conditions.flatMap((c) => (c.kind === 'component-used' ? [c.componentKind] : [])),
     );
@@ -802,17 +814,51 @@ describe('Линтер: цифровые Схема-задания (тикет 1
   });
 });
 
-describe('Объём контента М3 (тикет 18)', () => {
-  it('три Схема-задания по таблице истинности: XOR, полусумматор, RS-триггер', () => {
+describe('Объём контента М3 (тикет 19)', () => {
+  it('пять тем Теории', () => {
+    expect(module3.theory.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('от 12 до 16 Вопросов обоих видов', () => {
+    const questions = questionsOf(module3);
+    expect(questions.length).toBeGreaterThanOrEqual(12);
+    expect(questions.length).toBeLessThanOrEqual(16);
+    expect(questions.some((task) => task.kind === 'choice-question')).toBe(true);
+    expect(questions.some((task) => task.kind === 'numeric-question')).toBe(true);
+  });
+
+  it('от 5 до 7 цифровых Схема-заданий и ровно один цифровой Экзамен', () => {
+    const tasks = logicTasksOf(module3);
+    expect(tasks.filter((task) => !task.isExam).length).toBeGreaterThanOrEqual(5);
+    expect(tasks.filter((task) => !task.isExam).length).toBeLessThanOrEqual(7);
+    expect(tasks.filter((task) => task.isExam)).toHaveLength(1);
+  });
+
+  it('Задания нарастают от элементов к устройствам: XOR, полусумматор, равенство, голосование, триггер, Экзамен', () => {
     expect(logicTasksOf(module3).map((task) => task.id)).toEqual([
       'm3-xor',
       'm3-half-adder',
+      'm3-xnor',
+      'm3-majority',
       'm3-rs-latch',
+      'm3-exam',
     ]);
   });
 
   it('Модуль М3 не добавляет аналоговых Компонентов в Песочницу', () => {
     expect(modulePaletteOf(module3)).toEqual([]);
+  });
+
+  it('Экзамен — полный сумматор: таблица сходится с двоичным сложением трёх бит', () => {
+    const exam = examOf(module3);
+    if (!exam || exam.kind !== 'logic-task') throw new Error('фикстура: в М3 нет цифрового Экзамена');
+    expect(exam.inputs).toBe(3);
+    expect(exam.outputs).toBe(2);
+    // младший разряд суммы трёх бит — чётность; старший — перенос, то есть «две и более единицы»
+    for (const row of exam.truthTable) {
+      const total = row.inputs.reduce<number>((sum, bit) => sum + bit, 0);
+      expect(row.outputs).toEqual([total % 2, total >= 2 ? 1 : 0]);
+    }
   });
 });
 
@@ -869,5 +915,32 @@ describe('Схема-задания М3 решаемы: эталон-сборк�
     // установку открытая пара ещё проходит, «держит 1» — уже нет
     expect(verdict.rowChecks[0]?.passed).toBe(true);
     expect(verdict.rowChecks[1]?.passed).toBe(false);
+  });
+
+  it('сигнал равенства: И прямых входов плюс И инверсий проходит все наборы', () => {
+    assertSolvable(logicTaskOf('m3-xnor'), xnorFromAndOrNot());
+  });
+
+  it('сигнал равенства: сборка XOR (противоположная функция) не проходит', () => {
+    const verdict = verdictOf(logicTaskOf('m3-xnor'), xorFromSumOfProducts());
+    expect(verdict.outcome).toBe('incorrect');
+  });
+
+  it('мажоритарный «два из трёх»: И на пары и два ИЛИ проходят все восемь наборов', () => {
+    assertSolvable(logicTaskOf('m3-majority'), majorityFromAndOr());
+  });
+
+  it('мажоритарный: каскад ИЛИ («хотя бы один») не проходит — ловится на одиночной единице', () => {
+    const verdict = verdictOf(logicTaskOf('m3-majority'), orChainMajorityTrap());
+    expect(verdict.outcome).toBe('incorrect');
+  });
+
+  it('Экзамен: полный сумматор из двух XOR и голосования проходит все восемь наборов', () => {
+    assertSolvable(logicTaskOf('m3-exam'), fullAdderFromGates());
+  });
+
+  it('Экзамен: перепутанные местами Индикаторы не проходят — порядок выходов значим', () => {
+    const verdict = verdictOf(logicTaskOf('m3-exam'), fullAdderFromGates(true));
+    expect(verdict.outcome).toBe('incorrect');
   });
 });

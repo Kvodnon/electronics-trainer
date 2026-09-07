@@ -53,7 +53,7 @@ export function LogicTaskScreen({
 
   return (
     <section className="panel circuit-task" aria-labelledby="logic-prompt">
-      <p className="question-kind">Схема-задание</p>
+      <p className="question-kind">{task.isExam ? 'Экзамен' : 'Схема-задание'}</p>
       <h2 id="logic-prompt" className="question-prompt">
         {task.prompt}
       </h2>

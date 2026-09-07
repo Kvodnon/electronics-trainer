@@ -810,6 +810,7 @@ describe('Подсказки и Экзамен на экране Схема-за
 
   it('Экзамен помечен вместо «Схема-задание»', () => {
     const exam = module2.tasks.find(isExamTask)!;
+    if (exam.kind !== 'circuit-task') throw new Error('фикстура: Экзамен М2 — аналоговое Схема-задание');
     renderModule2Task(exam);
 
     expect(screen.getByText('Экзамен')).toBeInTheDocument();

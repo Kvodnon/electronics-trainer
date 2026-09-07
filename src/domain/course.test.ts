@@ -14,7 +14,7 @@ import {
 } from './course';
 import type { CourseData, CourseProgress } from './course';
 import type { ComponentKind } from './canvas';
-import type { CircuitTask, Task } from './task';
+import type { CircuitTask, LogicTask, Task } from './task';
 
 // Фикстура: Курс из двух Модулей; в первом — два Вопроса и Экзамен.
 // Реальный контент М1/М2 живёт в src/content и тестами редьюсера не используется.
@@ -248,6 +248,47 @@ describe('Экзамен Модуля', () => {
       taskId: 'm1-b',
     });
     expect(moduleTaskQueue(course.modules[0], progress).map((task) => task.id)).toEqual(['m1-b']);
+  });
+});
+
+describe('Экзамен цифрового Модуля', () => {
+  // М3 сдаёт Экзамен цифровым Схема-заданием: тот же шов Курса, другой вид Задания.
+  function makeLogicExam(id: string): LogicTask {
+    return {
+      kind: 'logic-task',
+      id,
+      isExam: true,
+      prompt: `Экзамен ${id}`,
+      palette: ['button', 'indicator', 'and'],
+      inputs: 2,
+      outputs: 1,
+      truthTable: [{ inputs: [1, 1], outputs: [1] }],
+    };
+  }
+
+  const digitalCourse: CourseData = {
+    modules: [
+      {
+        id: 'd1',
+        title: 'Цифровая',
+        summary: '',
+        theory: [],
+        tasks: [makeTask('d1-a'), makeLogicExam('d1-exam')],
+      },
+    ],
+  };
+
+  it('цифровое Схема-задание с пометкой — Экзамен Модуля', () => {
+    expect(examOf(digitalCourse.modules[0])?.id).toBe('d1-exam');
+  });
+
+  it('Экзамен закрыт до остальных Заданий; сдача завершает Модуль', () => {
+    expect(isExamUnlocked(digitalCourse.modules[0], emptyProgress)).toBe(false);
+    expect(moduleTaskQueue(digitalCourse.modules[0], emptyProgress).map((task) => task.id)).toEqual(['d1-a']);
+
+    const progress = passed('d1-a', 'd1-exam');
+    expect(isExamUnlocked(digitalCourse.modules[0], passed('d1-a'))).toBe(true);
+    expect(moduleProgressOf(digitalCourse.modules[0], progress).completed).toBe(true);
   });
 });
 

@@ -203,6 +203,11 @@ export interface LogicTask {
    * проверяется от состояния предыдущей строки, поэтому порядок строк значим.
    */
   readonly truthTable: readonly LogicTableRow[];
+  /**
+   * Экзамен: финальное цифровое Схема-задание Модуля (как у аналогового,
+   * правило открытия живёт в домене Курса).
+   */
+  readonly isExam?: boolean;
   readonly hints?: TaskHints;
 }
 
