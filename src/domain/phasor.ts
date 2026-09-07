@@ -108,11 +108,12 @@ export interface CircuitSolution {
   readonly phasor: PhasorSolution | null;
 }
 
-/** Опции решения: установившийся режим по нарисованным или по переключённым контактам. */
-export interface CircuitSolveOptions {
-  /** Состояние коммутаторов: id → замкнут? Нет записи — нарисованное состояние. */
-  readonly contactStates?: ReadonlyMap<string, boolean>;
-}
+/**
+ * Опции решения: установившийся режим по нарисованным или по переключённым
+ * контактам. Подмножество DcSolveOptions: фазорному проходу из переходных
+ * состояний нужно только состояние коммутаторов.
+ */
+export type CircuitSolveOptions = Pick<DcSolveOptions, 'contactStates'>;
 
 /** Частота первого найденного источника ~, Гц; нет источников — null. */
 export function acFrequencyOf(canvas: CanvasState): number | null {
@@ -131,7 +132,7 @@ export function solveCircuit(
   options: CircuitSolveOptions = {},
 ): CircuitSolution | null {
   try {
-    const dc = solveDc(canvas, options as DcSolveOptions);
+    const dc = solveDc(canvas, { contactStates: options.contactStates });
     const frequency = acFrequencyOf(canvas);
     const phasor = frequency === null ? null : solvePhasor(canvas, frequency, options);
     return { dc, phasor };
@@ -429,6 +430,9 @@ export function effectiveReadings(
     if (dc === null || ac === undefined) continue;
     const current = rmsOf(Math.abs(dc.current), cAbs(ac.current));
     const voltage = rmsOf(Math.abs(dc.voltage), cAbs(ac.voltage));
+    // произведение действующих значений — точная средняя мощность только
+    // для резистивных Компонентов (лампы, моторчики): сдвига фазы у них нет;
+    // для учебной индикации активности этого достаточно
     effective.set(component.id, {
       componentId: component.id,
       kind: component.kind,
@@ -447,23 +451,39 @@ export interface AcAmplitudes {
   readonly frequency: number;
   readonly componentAmplitudes: ReadonlyMap<
     string,
-    { readonly current: number; readonly voltage: number }
+    {
+      /** Амплитуда тока (пик), А, и его фаза в градусах — относительно источника. */
+      readonly current: number;
+      readonly currentPhaseDeg: number;
+      /** Амплитуда напряжения (пик), В, и действующее значение полной величины, В. */
+      readonly voltage: number;
+      readonly voltageRms: number;
+    }
   >;
   readonly wireAmplitudes: ReadonlyMap<string, number | null>;
 }
 
 /**
  * Амплитуды для оверлея по полному решению; нет источника ~ — null (оверлей
- * показывает постоянные значения, как раньше).
+ * показывает постоянные значения, как раньше). Вместе с амплитудами идут
+ * фаза тока и действующее значение напряжения — оверлей отвечает на те же
+ * вопросы, что и Мультиметр, не открывая Холст.
  */
 export function acAmplitudesOf(canvas: CanvasState, solution: CircuitSolution): AcAmplitudes | null {
   if (solution.phasor === null) return null;
   const phasor = solution.phasor;
-  const componentAmplitudes = new Map<string, { current: number; voltage: number }>();
+  const componentAmplitudes = new Map<
+    string,
+    { current: number; currentPhaseDeg: number; voltage: number; voltageRms: number }
+  >();
   for (const reading of phasor.readings) {
+    const dc = readingOf(solution.dc, reading.componentId);
+    const voltage = cAbs(reading.voltage);
     componentAmplitudes.set(reading.componentId, {
       current: cAbs(reading.current),
-      voltage: cAbs(reading.voltage),
+      currentPhaseDeg: phaseDegOf(reading.current),
+      voltage,
+      voltageRms: rmsOf(dc === null ? 0 : Math.abs(dc.voltage), voltage),
     });
   }
   const byId = new Map(phasor.readings.map((reading) => [reading.componentId, reading]));

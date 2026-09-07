@@ -365,13 +365,15 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
             const acReading = overlay.ac?.componentAmplitudes.get(component.id);
             if (reading === undefined && acReading === undefined) return null;
             const shown = withDrag(component);
+            // на переменном токе: амплитуда с фазой у тока, действующее
+            // значение у напряжения; иначе — постоянные показания
             const currentText =
               acReading !== undefined
-                ? `~${formatQuantity(acReading.current, 'А')}`
+                ? `~${formatQuantity(acReading.current, 'А')} ∠${Math.round(acReading.currentPhaseDeg)}°`
                 : formatQuantity(Math.abs(reading!.current), 'А');
             const voltageText =
               acReading !== undefined
-                ? `~${formatQuantity(acReading.voltage, 'В')}`
+                ? `~${formatQuantity(acReading.voltage, 'В')} · ${formatQuantity(acReading.voltageRms, 'В')}`
                 : formatQuantity(Math.abs(reading!.voltage), 'В');
             return (
               <text

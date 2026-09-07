@@ -230,6 +230,11 @@ describe('acAmplitudesOf: амплитуды для оверлея', () => {
     const capacitor = amplitudes.componentAmplitudes.get('c')!;
     expectCloseTo(capacitor.current, loopCurrent);
     expectCloseTo(capacitor.voltage, loopCurrent / (2 * Math.PI * 50 * C));
+    // вместе с амплитудами оверлей получает фазу тока и действующее значение
+    expectCloseTo(capacitor.currentPhaseDeg, phaseDegOf(
+      (solution.phasor!.readings.find((reading) => reading.componentId === 'c')!).current,
+    ));
+    expectCloseTo(capacitor.voltageRms, capacitor.voltage / Math.SQRT2);
 
     // в кольце из трёх Компонентов у каждого Провода один ток — амплитуда контура
     for (const [wireId, current] of amplitudes.wireAmplitudes) {
