@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues are tracked as local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+Issues are tracked as GitHub issues in `Kvodnon/electronics-trainer`, operated via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Domain docs
 
