@@ -123,9 +123,15 @@ export type CircuitCondition =
     }
   | {
       readonly kind: 'component-active';
-      /** Активное состояние: лампочка горит, моторчик крутится, светодиод светится. */
-      readonly componentKind: 'lamp' | 'motor' | 'led';
+      /** Активное состояние: лампочка горит, моторчик крутится, светодиод светится, зуммер звучит. */
+      readonly componentKind: 'lamp' | 'motor' | 'led' | 'buzzer';
       readonly active: boolean;
+    }
+  | {
+      /** Напряжение на движке потенциометра (относительно вывода 2), В — выход делителя. */
+      readonly kind: 'wiper-voltage';
+      readonly componentKind: 'potentiometer';
+      readonly range: MeasurementRange;
     }
   | {
       /** Постоянная времени RC-цепи, с: измеряется переходным Симулятором. */

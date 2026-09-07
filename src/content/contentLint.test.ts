@@ -15,7 +15,7 @@ import type {
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
 import { evaluate } from '../domain/evaluate';
-import { emptyProgress, progressReducer, sandboxPaletteOf } from '../domain/course';
+import { emptyProgress, modulePaletteOf, progressReducer, sandboxPaletteOf } from '../domain/course';
 
 /**
  * Контент-линтер (тикет 12): структурные гарантии всего Курса. Каждый Вопрос —
@@ -33,6 +33,7 @@ const MEASUREMENT_KINDS = new Set([
   'voltage-across',
   'power-of',
   'component-active',
+  'wiper-voltage',
   'rc-time-constant',
   'capacitor-voltage-at',
 ]);
@@ -490,6 +491,97 @@ describe('Схема-задания М2 решаемы: эталон-решен�
   });
 });
 
+describe('Схема-задания М2 решаемы: транзистор, потенциометр, зуммер (тикет 15)', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    return circuitTaskIn(module2, id);
+  }
+
+  /** Делитель: батарея 9 В на концах потенциометра (выводы 0 и 2), движок — выход. */
+  function dividerCanvas(wiper: number | undefined): CanvasState {
+    return {
+      components: [comp('pot', 'potentiometer', { wiper }), comp('bat', 'battery')],
+      wires: [
+        { id: 'w1', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'pot', pin: 0 } },
+        { id: 'w2', from: { componentId: 'pot', pin: 2 }, to: { componentId: 'bat', pin: 1 } },
+      ],
+    };
+  }
+
+  /**
+   * Ключ на транзисторе: кнопка с резистором 10 кОм — в базу (вывод 0);
+   * коллектор (вывод 1) питается через резистор 470 Ом и светодиод;
+   * эмиттер (вывод 2) — на «минус». Насыщение: ток светодиода ≈ 14,6 мА.
+   */
+  function transistorKeyCanvas(buttonClosed: boolean): CanvasState {
+    return {
+      components: [
+        comp('bat', 'battery'),
+        comp('btn', 'pushbutton', { closed: buttonClosed }),
+        comp('rb', 'resistor', { resistance: 10_000 }),
+        comp('q', 'transistor'),
+        comp('rc', 'resistor', { resistance: 470 }),
+        comp('led', 'led'),
+      ],
+      wires: [
+        { id: 'w1', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'btn', pin: 0 } },
+        { id: 'w2', from: { componentId: 'btn', pin: 1 }, to: { componentId: 'rb', pin: 0 } },
+        { id: 'w3', from: { componentId: 'rb', pin: 1 }, to: { componentId: 'q', pin: 0 } },
+        { id: 'w4', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'rc', pin: 0 } },
+        { id: 'w5', from: { componentId: 'rc', pin: 1 }, to: { componentId: 'led', pin: 0 } },
+        { id: 'w6', from: { componentId: 'led', pin: 1 }, to: { componentId: 'q', pin: 1 } },
+        { id: 'w7', from: { componentId: 'q', pin: 2 }, to: { componentId: 'bat', pin: 1 } },
+      ],
+    };
+  }
+
+  it('«ключ на транзисторе»: кнопка замкнута — светодиод горит с током в границах', () => {
+    assertSolvable(circuitTaskOf('m2-transistor-switch'), transistorKeyCanvas(true));
+  });
+
+  it('«ключ на транзисторе»: разомкнутая кнопка решение не проходит — транзистор закрыт', () => {
+    const canvas = transistorKeyCanvas(false);
+    const verdict = evaluate(circuitTaskOf('m2-transistor-switch'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
+  });
+
+  it('«делитель с потенциометром»: движок посередине даёт 4,5 В — в границах 3–5 В', () => {
+    // «плюс» батареи — на конец потенциометра (вывод 0), вывод 2 — на «минус»;
+    // обычный ring соединяет выводы 1→0 и зацепил бы движок вместо конца
+    assertSolvable(
+      circuitTaskOf('m2-pot-divider'),
+      dividerCanvas(defaultValuesOf('potentiometer').wiper),
+    );
+  });
+
+  it('«делитель с потенциометром»: движок у края — напряжение вне границ, Задание не сдано', () => {
+    const verdict = evaluate(circuitTaskOf('m2-pot-divider'), {
+      kind: 'circuit-answer',
+      canvas: dividerCanvas(0.99),
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    // схема живая (ток течёт), но измерение мимо границы — «работает, но не по условию»
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
+  });
+
+  it('«зуммер»: резистор 100 Ом даёт ток ≈ 60 мА — звучит и в границах', () => {
+    assertSolvable(
+      circuitTaskOf('m2-buzzer-check'),
+      ring(comp('bz', 'buzzer'), comp('bat', 'battery'), comp('r1', 'resistor', { resistance: 100 })),
+    );
+  });
+
+  it('«зуммер»: резистор по умолчанию (1 кОм) тих — ток ниже порога звучания', () => {
+    const canvas = ring(comp('bz', 'buzzer'), comp('bat', 'battery'), comp('r1', 'resistor'));
+    const verdict = evaluate(circuitTaskOf('m2-buzzer-check'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
+  });
+});
+
 describe('Палитра М2 привязана к Прогрессу (тикет 13)', () => {
   /** Прогресс, в котором перечисленные Задания пройдены. */
   function passed(...taskIds: readonly string[]) {
@@ -519,5 +611,17 @@ describe('Палитра М2 привязана к Прогрессу (тике�
   it('Палитра Модуля М2 — его Схема-задания объявляют диод и светодиод', () => {
     const palette = sandboxPaletteOf(course, passed(...course.modules.flatMap((m) => m.tasks.map((t) => t.id))));
     expect(palette.filter((kind) => kind === 'diode' || kind === 'led')).toEqual(['led', 'diode']);
+  });
+
+  it('Модуль М2 открыт — транзистор, потенциометр и зуммер приходят в Песочницу (тикет 15)', () => {
+    const palette = sandboxPaletteOf(course, passed(...course.modules.flatMap((m) => m.tasks.map((t) => t.id))));
+    for (const kind of ['transistor', 'potentiometer', 'buzzer'] as const) {
+      expect(palette).toContain(kind);
+    }
+    // первоисточник Палитры Модуля — Палитры его Схема-заданий
+    const modulePalette = modulePaletteOf(module2);
+    expect(modulePalette).toContain('transistor');
+    expect(modulePalette).toContain('potentiometer');
+    expect(modulePalette).toContain('buzzer');
   });
 });

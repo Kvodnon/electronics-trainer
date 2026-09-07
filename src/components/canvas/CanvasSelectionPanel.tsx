@@ -1,6 +1,11 @@
 import { useState } from 'react';
 import type { ComponentValuePatch, LedColor, PlacedComponent } from '../../domain/canvas';
-import { defaultLedColor, ledColors, valueFieldOf } from '../../domain/canvas';
+import {
+  defaultLedColor,
+  defaultPotentiometerWiper,
+  ledColors,
+  valueFieldOf,
+} from '../../domain/canvas';
 import { parseQuantity, type QuantityUnit } from '../../domain/quantity';
 import { ledColorTitles } from './CanvasSymbols';
 
@@ -45,9 +50,9 @@ export function CanvasSelectionPanel({
   );
 }
 
-/** Форма номинала: батарея — напряжение, резистор/лампа/мотор — сопротивление,
- * коммутаторы — замкнут, светодиод — цвет свечения, конденсатор — ёмкость;
- * у диода правимого поля нет. */
+/** Форма номинала: батарея — напряжение, резистор/лампа/мотор/зуммер — сопротивление,
+ * коммутаторы — замкнут, светодиод — цвет свечения, конденсатор — ёмкость,
+ * потенциометр — сопротивление и движок; у диода и транзистора правимого поля нет. */
 function ComponentValueForm({
   component,
   onApply,
@@ -123,25 +128,56 @@ function ComponentValueForm({
   }
 
   return (
-    <form
-      className="canvas-value-form"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <label htmlFor={`canvas-value-${component.id}`}>Номинал, {unit}</label>
+    <>
+      <form
+        className="canvas-value-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <label htmlFor={`canvas-value-${component.id}`}>Номинал, {unit}</label>
+        <input
+          id={`canvas-value-${component.id}`}
+          className="numeric-input-field"
+          value={raw}
+          onChange={(event) => setRaw(event.target.value)}
+          aria-invalid={error !== null}
+        />
+        <button type="submit" className="button-primary">
+          Применить
+        </button>
+        {error !== null && <p className="input-error">{error}</p>}
+      </form>
+      {component.kind === 'potentiometer' && (
+        <PotentiometerWiper component={component} onApply={onApply} />
+      )}
+    </>
+  );
+}
+
+/** Движок потенциометра: плавная правка положения ползунком, 0–100 %. */
+function PotentiometerWiper({
+  component,
+  onApply,
+}: {
+  component: PlacedComponent;
+  onApply: (patch: ComponentValuePatch) => void;
+}) {
+  const percent = Math.round((component.wiper ?? defaultPotentiometerWiper) * 100);
+  return (
+    <label className="canvas-wiper-field">
+      Положение движка
       <input
-        id={`canvas-value-${component.id}`}
-        className="numeric-input-field"
-        value={raw}
-        onChange={(event) => setRaw(event.target.value)}
-        aria-invalid={error !== null}
+        type="range"
+        min={0}
+        max={100}
+        step={1}
+        value={percent}
+        aria-valuetext={`${percent}%`}
+        onChange={(event) => onApply({ wiper: Number(event.target.value) / 100 })}
       />
-      <button type="submit" className="button-primary">
-        Применить
-      </button>
-      {error !== null && <p className="input-error">{error}</p>}
-    </form>
+      <span className="canvas-wiper-percent">{percent}%</span>
+    </label>
   );
 }

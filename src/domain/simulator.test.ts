@@ -3,8 +3,13 @@ import type { CanvasState, ComponentKind, LedColor, PlacedComponent, PinRef, Wir
 import { defaultValuesOf } from './canvas';
 import {
   BATTERY_INTERNAL_RESISTANCE,
+  BUZZER_SOUND_CURRENT,
   DIODE_FORWARD_VOLTAGE,
   DIODE_ON_RESISTANCE,
+  TRANSISTOR_BETA,
+  TRANSISTOR_R_BE,
+  TRANSISTOR_V_BE_ON,
+  isBuzzerSounding,
   isLampLit,
   isLedLit,
   isMotorSpinning,
@@ -317,7 +322,14 @@ describe('wireCurrents: оверлей токов Проводов', () => {
 describe('lampBrightness: яркость от мощности', () => {
   it('ниже порога накала — 0; выше — растёт; у полного накала — насыщается', () => {
     const reading = (power: number) =>
-      ({ componentId: 'x', kind: 'lamp', current: 0.1, voltage: 1, power }) as const;
+      ({
+        componentId: 'x',
+        kind: 'lamp',
+        current: 0.1,
+        voltage: 1,
+        power,
+        pinCurrents: [-0.1, 0.1],
+      }) as const;
     expect(lampBrightness(reading(0.01))).toBe(0);
     expect(lampBrightness(reading(0.02))).toBeGreaterThan(0);
     const half = lampBrightness(reading(0.25));
@@ -437,12 +449,191 @@ describe('Диод и светодиод: кусочно-линейные мод
 
   it('свечение светодиода — от прямого тока: ниже порога не виден, выше — насыщается', () => {
     const base = { componentId: 'led', kind: 'led' as const, voltage: 2, power: 0.02 };
-    expect(ledBrightness({ ...base, current: 0.0005 })).toBe(0);
-    expect(isLedLit({ ...base, current: 0.0005 })).toBe(false);
-    expect(isLedLit({ ...base, current: LED_LIT_CURRENT })).toBe(true);
-    expect(ledBrightness({ ...base, current: LED_FULL_CURRENT / 2 })).toBeCloseTo(0.5);
-    expect(ledBrightness({ ...base, current: 0.05 })).toBe(1);
+    expect(ledBrightness({ ...base, current: 0.0005, pinCurrents: [-0.0005, 0.0005] })).toBe(0);
+    expect(isLedLit({ ...base, current: 0.0005, pinCurrents: [-0.0005, 0.0005] })).toBe(false);
+    expect(isLedLit({ ...base, current: LED_LIT_CURRENT, pinCurrents: [-1, 1] })).toBe(true);
+    expect(ledBrightness({ ...base, current: LED_FULL_CURRENT / 2, pinCurrents: [-1, 1] })).toBeCloseTo(0.5);
+    expect(ledBrightness({ ...base, current: 0.05, pinCurrents: [-1, 1] })).toBe(1);
     // обратный ток (запертый диод) свечения не даёт
-    expect(ledBrightness({ ...base, current: -0.01 })).toBe(0);
+    expect(ledBrightness({ ...base, current: -0.01, pinCurrents: [1, -1] })).toBe(0);
+  });
+});
+
+describe('Транзистор NPN: поведенческая модель ключа (М2, тикет 15)', () => {
+  /**
+   * Ключ на транзисторе: батарея 9 В; кнопка с резистором Rб — в цепи базы;
+   * коллектор питается через Rc и красный светодиод; эмиттер — на «минус».
+   * Выводы транзистора: 0 — база, 1 — коллектор, 2 — эмиттер.
+   */
+  function transistorKey(baseResistor: number, collectorResistor: number, buttonClosed: boolean): CanvasState {
+    return canvasOf(
+      [
+        component('b', 'battery'),
+        component('btn', 'pushbutton', { closed: buttonClosed }),
+        component('rb', 'resistor', { resistance: baseResistor }),
+        component('q', 'transistor'),
+        component('rc', 'resistor', { resistance: collectorResistor }),
+        component('led', 'led'),
+      ],
+      [
+        wire('w1', pin('b', 0), pin('btn', 0)),
+        wire('w2', pin('btn', 1), pin('rb', 0)),
+        wire('w3', pin('rb', 1), pin('q', 0)),
+        wire('w4', pin('b', 0), pin('rc', 0)),
+        wire('w5', pin('rc', 1), pin('led', 0)),
+        wire('w6', pin('led', 1), pin('q', 1)),
+        wire('w7', pin('q', 2), pin('b', 1)),
+      ],
+    );
+  }
+
+  const expectedBaseCurrent = (baseResistor: number): number =>
+    (9 - TRANSISTOR_V_BE_ON) / (baseResistor + TRANSISTOR_R_BE + BATTERY_INTERNAL_RESISTANCE);
+
+  it('отсечка: кнопка разомкнута — тока через транзистор нет, светодиод не светится', () => {
+    const solution = solveDc(transistorKey(10_000, 470, false));
+    const transistor = readingOf(solution, 'q')!;
+    expect(transistor.current).toBe(0);
+    // весь остаток питания лежит на закрытом транзисторе
+    expect(transistor.voltage).toBeGreaterThan(1);
+    expect(readingOf(solution, 'led')!.current).toBe(0);
+    expect(isLedLit(readingOf(solution, 'led')!)).toBe(false);
+  });
+
+  it('активный режим: слабая база (100 кОм) — ток коллектора равен β·Iб, V_кэ ещё велико', () => {
+    const baseCurrent = expectedBaseCurrent(100_000); // ≈ 83 мкА
+    const solution = solveDc(transistorKey(100_000, 470, true));
+    const transistor = readingOf(solution, 'q')!;
+    expectCloseTo(transistor.current, TRANSISTOR_BETA * baseCurrent, 0.02);
+    // β·Iб ≈ 8,3 мА меньше, чем пропустит коллекторная цепь: V_кэ ≈ 3,2 В
+    expectCloseTo(
+      transistor.voltage,
+      9 - LED_FORWARD_VOLTAGE.red - TRANSISTOR_BETA * baseCurrent * (470 + DIODE_ON_RESISTANCE),
+      0.03,
+    );
+    expect(transistor.voltage).toBeGreaterThan(1);
+    expect(isLedLit(readingOf(solution, 'led')!)).toBe(true);
+  });
+
+  it('насыщение: сильная база (10 кОм) — транзистор раскрыт, на коллектор—эмиттере около 0,2 В', () => {
+    const solution = solveDc(transistorKey(10_000, 470, true));
+    const transistor = readingOf(solution, 'q')!;
+    // ток коллектора задаёт внешняя цепь: (9 − 1,8 − 0,2)/(Rc + светодиод + насыщение + батарея)
+    const expectedCollector = (9 - LED_FORWARD_VOLTAGE.red - 0.2) / (470 + DIODE_ON_RESISTANCE + 2 + BATTERY_INTERNAL_RESISTANCE);
+    expectCloseTo(transistor.current, expectedCollector, 0.01);
+    expectCloseTo(transistor.voltage, 0.2 + expectedCollector * 2, 0.05);
+    expect(transistor.voltage).toBeLessThan(0.5);
+    expect(isLedLit(readingOf(solution, 'led')!)).toBe(true);
+  });
+
+  it('малый ток управляет большим: ток базы на два порядка меньше тока коллектора', () => {
+    const solution = solveDc(transistorKey(100_000, 470, true));
+    const transistor = readingOf(solution, 'q')!;
+    const baseCurrent = Math.abs(transistor.pinCurrents[0]);
+    expectCloseTo(baseCurrent, expectedBaseCurrent(100_000), 0.02);
+    expectCloseTo(transistor.current, TRANSISTOR_BETA * baseCurrent, 0.02);
+    // эмиттер уносит сумму: Iб + Iк
+    expectCloseTo(transistor.pinCurrents[2], baseCurrent + transistor.current, 0.02);
+  });
+
+  it('токи Проводов видят все три вывода: база несёт Iб, коллектор — Iк', () => {
+    const solution = solveDc(transistorKey(10_000, 470, true));
+    const transistor = readingOf(solution, 'q')!;
+    const currents = new Map(wireCurrents(transistorKey(10_000, 470, true), solution).map((e) => [e.wireId, e.current!]));
+    expectCloseTo(Math.abs(currents.get('w3')!), Math.abs(transistor.pinCurrents[0]), 1e-6);
+    expectCloseTo(Math.abs(currents.get('w6')!), Math.abs(transistor.current), 1e-6);
+    expectCloseTo(Math.abs(currents.get('w7')!), Math.abs(transistor.pinCurrents[2]), 1e-6);
+  });
+
+  it('база никуда не подключена — транзистор закрыт, даже если кнопка замкнута', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('q', 'transistor'), component('rc', 'resistor', { resistance: 470 }), component('led', 'led')],
+      [
+        wire('w1', pin('b', 0), pin('rc', 0)),
+        wire('w2', pin('rc', 1), pin('led', 0)),
+        wire('w3', pin('led', 1), pin('q', 1)),
+        wire('w4', pin('q', 2), pin('b', 1)),
+      ],
+    );
+    const solution = solveDc(canvas);
+    expect(readingOf(solution, 'q')!.current).toBe(0);
+    expect(readingOf(solution, 'led')!.current).toBe(0);
+  });
+});
+
+describe('Потенциометр: резистор с движком (М2, тикет 15)', () => {
+  /** Делитель: батарея 9 В на концах потенциометра 10 кОм; нагрузка — зуммером с движка на «минус». */
+  function potDivider(wiper: number, loadResistance?: number): CanvasState {
+    const components = [component('b', 'battery'), component('pot', 'potentiometer', { wiper })];
+    const wires: Wire[] = [
+      wire('w1', pin('b', 0), pin('pot', 0)),
+      wire('w2', pin('pot', 2), pin('b', 1)),
+    ];
+    if (loadResistance !== undefined) {
+      components.push(component('bz', 'buzzer', { resistance: loadResistance }));
+      wires.push(wire('w3', pin('pot', 1), pin('bz', 0)), wire('w4', pin('bz', 1), pin('b', 1)));
+    }
+    return canvasOf(components, wires);
+  }
+
+  const wiperVoltageOf = (solution: ReturnType<typeof solveDc>): number =>
+    solution.pinNodes.get('pot:1')!.voltage - solution.pinNodes.get('pot:2')!.voltage;
+
+  it('движок делит сопротивление: напряжение с движка меняется положением', () => {
+    // p = 0,25: между движком и «минусом» 7,5 кОм из 10 кОм → 9 · 0,75 = 6,75 В
+    expectCloseTo(wiperVoltageOf(solveDc(potDivider(0.25))), 6.75, 0.01);
+    // посередине — половина батареи
+    expectCloseTo(wiperVoltageOf(solveDc(potDivider(0.5))), 4.5, 0.01);
+  });
+
+  it('крайние положения движка дают всё напряжение и ноль', () => {
+    expectCloseTo(wiperVoltageOf(solveDc(potDivider(0))), 9, 0.001);
+    expect(wiperVoltageOf(solveDc(potDivider(1)))).toBeLessThan(0.001);
+  });
+
+  it('сквозной ток считается по закону Ома, «висящий» движок тока не берёт', () => {
+    const solution = solveDc(potDivider(0.5));
+    const pot = readingOf(solution, 'pot')!;
+    expectCloseTo(pot.current, 9 / 10_000, 0.01);
+    expectCloseTo(pot.voltage, 9, 0.01);
+    expect(pot.pinCurrents[1]).toBe(0);
+  });
+
+  it('нагрузка на движке просаживает делитель — расчёт остаётся честным', () => {
+    // 50 Ом зуммера рядом с плечом 5 кОм: 5к||50 = 49,5 Ом — выход садится до ~89 мВ
+    const loaded = 5000 / 101; // 5000·50/(5000+50)
+    const expectedWiper = (9 * loaded) / (5000 + loaded);
+    const solution = solveDc(potDivider(0.5, 50));
+    expectCloseTo(wiperVoltageOf(solution), expectedWiper, 0.01);
+    const pot = readingOf(solution, 'pot')!;
+    // движок отдаёт ток нагрузке: разность токов плеч
+    expect(pot.pinCurrents[1]).toBeGreaterThan(0);
+    expectCloseTo(pot.pinCurrents[1], expectedWiper / 50, 0.05);
+    expect(isBuzzerSounding(readingOf(solution, 'bz')!)).toBe(false);
+  });
+});
+
+describe('Зуммер: звучит при токе выше порога (М2, тикет 15)', () => {
+  const ringWithBuzzer = (resistance: number): CanvasState =>
+    canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance }), component('bz', 'buzzer')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('bz', 0)), wire('w3', pin('bz', 1), pin('b', 1))],
+    );
+
+  it('ток выше порога — зуммер звучит; ниже порога — молчит', () => {
+    const loud = solveDc(ringWithBuzzer(100)); // 9/(100+50) ≈ 60 мА
+    expect(loud.readings.find((r) => r.kind === 'buzzer')!.current).toBeGreaterThan(BUZZER_SOUND_CURRENT);
+    expect(isBuzzerSounding(loud.readings.find((r) => r.kind === 'buzzer')!)).toBe(true);
+    const quiet = solveDc(ringWithBuzzer(1000)); // ≈ 8,6 мА
+    expect(isBuzzerSounding(quiet.readings.find((r) => r.kind === 'buzzer')!)).toBe(false);
+  });
+
+  it('зуммер — резистивный Компонент: закон Ома и мощность считаются как у резистора', () => {
+    const solution = solveDc(ringWithBuzzer(100));
+    const buzzer = solution.readings.find((r) => r.kind === 'buzzer')!;
+    const current = 9 / (100 + 50 + BATTERY_INTERNAL_RESISTANCE);
+    expectCloseTo(buzzer.current, current, 0.01);
+    expectCloseTo(buzzer.voltage, current * 50, 0.01);
+    expectCloseTo(buzzer.power, current * current * 50, 0.01);
   });
 });

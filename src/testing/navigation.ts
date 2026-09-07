@@ -55,6 +55,39 @@ export async function wireForwardDiode(
   await user.click(screen.getByRole('button', { name: `Вывод 2: ${battery}` }));
 }
 
+/**
+ * Собирает ключ на транзисторе: кнопка с резистором — в базу (вывод 1),
+ * коллектор (вывод 2) — через второй резистор и светодиод на «плюс»,
+ * эмиттер (вывод 3) — на «минус» батареи.
+ */
+export async function wireTransistorKey(
+  user: User,
+  names: readonly [
+    battery: string,
+    pushbutton: string,
+    baseResistor: string,
+    collectorResistor: string,
+    transistor: string,
+    led: string,
+  ],
+): Promise<void> {
+  const [battery, pushbutton, baseResistor, collectorResistor, transistor, led] = names;
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${battery}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${pushbutton}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${pushbutton}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${baseResistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${baseResistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${transistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${battery}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${collectorResistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${collectorResistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${led}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${led}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${transistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 3: ${transistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${battery}` }));
+}
+
 /** Выбирает Компонент и меняет его сопротивление в панели правки. */
 export async function setResistance(
   user: User,

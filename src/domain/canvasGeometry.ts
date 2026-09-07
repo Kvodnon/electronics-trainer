@@ -3,7 +3,7 @@
  * повороте, привязка к сетке, границы Холста и ортогональная трассировка
  * Проводов — всё, что слою отрисовки нужно от домена, чтобы рисовать схему.
  */
-import type { PlacedComponent } from './canvas';
+import type { ComponentKind, PlacedComponent } from './canvas';
 
 /** Шаг сетки Холста в логических пикселях. */
 export const GRID = 20;
@@ -11,7 +11,7 @@ export const GRID = 20;
 /** Размер Холста в логических пикселях (SVG viewBox). */
 export const CANVAS_SIZE = { width: 800, height: 560 } as const;
 
-/** Расстояние от центра Компонента до вывода: символы М1 рисуются в габаритах ±40. */
+/** Расстояние от центра Компонента до вывода: символы рисуются в габаритах ±40. */
 export const PIN_REACH = 40;
 
 /** Точка в координатах Холста. */
@@ -45,13 +45,35 @@ export function clampPosition(position: Point): Point {
 }
 
 /**
- * Выводы Компонентов М1 в локальных координатах (до поворота):
- * два вывода горизонтально, направления — наружу от центра.
+ * Выводы в локальных координатах (до поворота): два вывода горизонтально —
+ * базовая раскладка большинства Компонентов; направления — наружу от центра.
  */
-const LOCAL_PINS: readonly DirectedPoint[] = [
+const TWO_PIN_LOCAL: readonly DirectedPoint[] = [
   { x: -PIN_REACH, y: 0, dx: -1, dy: 0 },
   { x: PIN_REACH, y: 0, dx: 1, dy: 0 },
 ];
+
+/**
+ * Транзистор: база (вывод 0) слева, коллектор (1) справа сверху,
+ * эмиттер (2) справа снизу — классическая раскладка NPN-символа.
+ */
+const TRANSISTOR_LOCAL: readonly DirectedPoint[] = [
+  { x: -PIN_REACH, y: 0, dx: -1, dy: 0 },
+  { x: PIN_REACH, y: -PIN_REACH, dx: 1, dy: 0 },
+  { x: PIN_REACH, y: PIN_REACH, dx: 1, dy: 0 },
+];
+
+/** Потенциометр: концы (выводы 0 и 2) по горизонтали, движок (1) снизу. */
+const POTENTIOMETER_LOCAL: readonly DirectedPoint[] = [
+  { x: -PIN_REACH, y: 0, dx: -1, dy: 0 },
+  { x: 0, y: PIN_REACH, dx: 0, dy: 1 },
+  { x: PIN_REACH, y: 0, dx: 1, dy: 0 },
+];
+
+const LOCAL_PINS_BY_KIND: Partial<Record<ComponentKind, readonly DirectedPoint[]>> = {
+  transistor: TRANSISTOR_LOCAL,
+  potentiometer: POTENTIOMETER_LOCAL,
+};
 
 /** Поворот точки с направлением на 90° по часовой стрелке (ось Y вниз). */
 function rotate90(point: DirectedPoint): DirectedPoint {
@@ -71,7 +93,7 @@ function rotateTimes(point: DirectedPoint, quarterTurns: number): DirectedPoint 
 
 /** Позиция и направление вывода Компонента на Холсте. */
 export function pinPointOf(component: PlacedComponent, pin: number): DirectedPoint {
-  const local = LOCAL_PINS[pin];
+  const local = (LOCAL_PINS_BY_KIND[component.kind] ?? TWO_PIN_LOCAL)[pin];
   const rotated = rotateTimes(local, component.rotation / 90);
   return { x: component.x + rotated.x, y: component.y + rotated.y, dx: rotated.dx, dy: rotated.dy };
 }

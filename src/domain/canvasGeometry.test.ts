@@ -131,3 +131,27 @@ function expectOnGrid(route: readonly { x: number; y: number }[]): void {
     expect(point.y % 20, `y=${point.y} не в узле сетки`).toBe(0);
   }
 }
+
+describe('Выводы трёхвыводных Компонентов (тикет 15)', () => {
+  it('Транзистор: база слева, коллектор справа сверху, эмиттер справа снизу', () => {
+    const transistor: PlacedComponent = { id: 'q', kind: 'transistor', x: 200, y: 200, rotation: 0 };
+    expect(pinPointOf(transistor, 0)).toEqual({ x: 160, y: 200, dx: -1, dy: 0 });
+    expect(pinPointOf(transistor, 1)).toEqual({ x: 240, y: 160, dx: 1, dy: 0 });
+    expect(pinPointOf(transistor, 2)).toEqual({ x: 240, y: 240, dx: 1, dy: 0 });
+  });
+
+  it('Потенциометр: концы по горизонтали, движок снизу', () => {
+    const pot: PlacedComponent = { id: 'p', kind: 'potentiometer', x: 200, y: 200, rotation: 0 };
+    expect(pinPointOf(pot, 0)).toEqual({ x: 160, y: 200, dx: -1, dy: 0 });
+    expect(pinPointOf(pot, 1)).toEqual({ x: 200, y: 240, dx: 0, dy: 1 });
+    expect(pinPointOf(pot, 2)).toEqual({ x: 240, y: 200, dx: 1, dy: 0 });
+  });
+
+  it('Три вывода вращаются как одно целое', () => {
+    const transistor: PlacedComponent = { id: 'q', kind: 'transistor', x: 200, y: 200, rotation: 90 };
+    // поворот по часовой: база уходит наверх, коллектор — вправо вниз, эмиттер — влево вниз
+    expect(pinPointOf(transistor, 0)).toEqual({ x: 200, y: 160, dx: 0, dy: -1 });
+    expect(pinPointOf(transistor, 1)).toEqual({ x: 240, y: 240, dx: 0, dy: 1 });
+    expect(pinPointOf(transistor, 2)).toEqual({ x: 160, y: 240, dx: 0, dy: 1 });
+  });
+});

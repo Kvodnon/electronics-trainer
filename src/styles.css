@@ -1128,6 +1128,28 @@ body {
   font-size: 14px;
 }
 
+/* Движок потенциометра: ползунок положения с процентным табло */
+
+.canvas-wiper-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.canvas-wiper-field input[type='range'] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.canvas-wiper-percent {
+  min-width: 42px;
+  text-align: right;
+  font-family: var(--monospace);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
 .canvas-hint {
   margin: 14px 0 0;
   color: var(--text-muted);
@@ -1406,6 +1428,24 @@ body {
   pointer-events: none;
 }
 
+/* Живое поведение: пульсирующие дуги звука звучащего зуммера */
+
+.symbol-buzzer-waves {
+  stroke: var(--accent);
+  pointer-events: none;
+  animation: buzzer-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes buzzer-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* Осциллограф переходного режима */
 
 .scope-panel {
@@ -1485,6 +1525,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .motor-rotor-spinning,
+  .symbol-buzzer-waves,
   .fault-ring {
     animation: none;
   }

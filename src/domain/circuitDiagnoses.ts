@@ -6,7 +6,7 @@
  * по условию» — каждый Диагноз указывает место ошибки на схеме для подсветки.
  * Чистый TypeScript без DOM.
  */
-import { defaultLedColor, pinKey, type CanvasState } from './canvas';
+import { defaultLedColor, pinCountOf, pinKey, type CanvasState, type PlacedComponent } from './canvas';
 import { formatQuantity, formatQuantityRange } from './quantity';
 import { COMPONENT_LEXIS, LED_COLOR_GENITIVE, cap } from './componentLexis';
 import { LED_MAX_CURRENT, forwardVoltageOf, readingsOfKind, type DcSolution } from './simulator';
@@ -244,18 +244,24 @@ function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiag
   };
 }
 
-/** Первый Компонент с выводом без Проводов: нагрузки важнее батареи — она обычно цела. */
+/** Первый Компонент со свободным выводом: нагрузки важнее батареи — она обычно цела. */
 function firstWithUnconnectedPin(canvas: CanvasState): string | null {
   const connectedPins = new Set<string>();
   for (const wire of canvas.wires) {
     connectedPins.add(pinKey(wire.from.componentId, wire.from.pin));
     connectedPins.add(pinKey(wire.to.componentId, wire.to.pin));
   }
-  const hasFreePin = (componentId: string): boolean =>
-    !connectedPins.has(pinKey(componentId, 0)) || !connectedPins.has(pinKey(componentId, 1));
-  const load = canvas.components.find((component) => component.kind !== 'battery' && hasFreePin(component.id));
+  // у трёхвыводных Компонентов (транзистор, потенциометр) свободный движок
+  // или база — тоже разрыв: проверяются все выводы вида
+  const hasFreePin = (component: PlacedComponent): boolean => {
+    for (let pin = 0; pin < pinCountOf(component.kind); pin += 1) {
+      if (!connectedPins.has(pinKey(component.id, pin))) return true;
+    }
+    return false;
+  };
+  const load = canvas.components.find((component) => component.kind !== 'battery' && hasFreePin(component));
   if (load !== undefined) return load.id;
-  const battery = canvas.components.find((component) => component.kind === 'battery' && hasFreePin(component.id));
+  const battery = canvas.components.find((component) => component.kind === 'battery' && hasFreePin(component));
   return battery?.id ?? null;
 }
 

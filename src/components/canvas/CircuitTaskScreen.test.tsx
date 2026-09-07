@@ -8,7 +8,7 @@ import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
 import { isExamTask } from '../../domain/course';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
-import { setResistance, wireForwardDiode } from '../../testing/navigation';
+import { setResistance, closeSwitch, wireForwardDiode, wireRing, wireTransistorKey } from '../../testing/navigation';
 import { CircuitTaskScreen } from './CircuitTaskScreen';
 
 /**
@@ -994,3 +994,92 @@ describe('Осциллограф переходного режима', () => {
   });
 });
 
+
+describe('Задания М2: транзистор, потенциометр, зуммер (тикет 15)', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    const task = module2.tasks.find(
+      (candidate): candidate is CircuitTask => candidate.kind === 'circuit-task' && candidate.id === id,
+    );
+    if (!task) throw new Error(`фикстура: нет Схема-задания «${id}»`);
+    return task;
+  }
+
+  it('«ключ на транзисторе»: полный цикл — разомкнутая кнопка ловится, замкнутая проходит с Разбором', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m2-transistor-switch'));
+
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Ключ' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Транзистор' }));
+    await user.click(screen.getByRole('button', { name: 'Светодиод' }));
+    await wireTransistorKey(user, [
+      'Батарея 1',
+      'Ключ 2',
+      'Резистор 3',
+      'Резистор 4',
+      'Транзистор 5',
+      'Светодиод 6',
+    ]);
+
+    // кнопка разомкнута: транзистор закрыт, светодиод не светится — ловушка честно названа
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Не пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/контакт разомкнут/)).toBeInTheDocument();
+
+    // замыкаем кнопку: малый ток базы открывает большой ток коллектора
+    await closeSwitch(user, 'Ключ 2');
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Светодиод светится/)).toBeInTheDocument();
+    expect(screen.getByText(/Ток через светодиод/)).toBeInTheDocument();
+  });
+
+  it('«делитель с потенциометром»: движок подгоняется ползунком, проверяется по напряжению', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m2-pot-divider'));
+
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Потенциометр' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Потенциометр 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 3: Потенциометр 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
+
+    // движок у «минуса» — 0,45 В, не хватает: «работает, но не по условию»
+    await user.click(screen.getByRole('button', { name: 'Потенциометр 2' }));
+    const wiper = screen.getByRole('slider', { name: /Положение движка/ });
+    fireEvent.change(wiper, { target: { value: '95' } });
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
+    expect(screen.getByText(/Напряжение на движке потенциометра/)).toBeInTheDocument();
+
+    // поворот движка в середину — 4,5 В, в границах условия
+    await user.click(screen.getByRole('button', { name: 'Потенциометр 2' }));
+    fireEvent.change(screen.getByRole('slider', { name: /Положение движка/ }), { target: { value: '50' } });
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/4,5 В/)).toBeInTheDocument();
+  });
+
+  it('«зуммер»: резистор по умолчанию тих, после подбора — звучит', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m2-buzzer-check'));
+
+    await user.click(screen.getByRole('button', { name: 'Батарея' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Зуммер' }));
+    await wireRing(user, ['Батарея 1', 'Зуммер 3', 'Резистор 2']);
+
+    // 1 кОм по умолчанию — ток 8,6 мА ниже порога звучания
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
+    expect(screen.getByText(/Зуммер не звучит/)).toBeInTheDocument();
+
+    await setResistance(user, 'Резистор 2', '100');
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Зуммер звучит/)).toBeInTheDocument();
+  });
+});

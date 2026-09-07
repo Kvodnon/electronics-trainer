@@ -386,3 +386,96 @@ describe('диагноз М2: заряженный конденсатор — н
     expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'c' });
   });
 });
+
+describe('диагнозы М2: ключ на транзисторе (тикет 15)', () => {
+  /** Задание: кнопка открывает транзистор, светодиод в коллекторе горит с током 5–15 мА. */
+  function evaluateSwitchKey(canvas: CanvasState) {
+    const task: CircuitTask = {
+      kind: 'circuit-task',
+      id: 'trap-transistor-key',
+      prompt: 'Кнопка включает светодиод через транзистор.',
+      palette: ['battery', 'pushbutton', 'resistor', 'transistor', 'led'],
+      conditions: [
+        { kind: 'component-used', componentKind: 'battery' },
+        { kind: 'component-used', componentKind: 'pushbutton' },
+        { kind: 'component-used', componentKind: 'transistor' },
+        { kind: 'component-used', componentKind: 'resistor' },
+        { kind: 'component-used', componentKind: 'led' },
+        { kind: 'component-active', componentKind: 'led', active: true },
+        { kind: 'current-through', componentKind: 'led', range: { from: 0.005, to: 0.015 } },
+      ],
+    };
+    const verdict = evaluate(task, answer(canvas.components, canvas.wires));
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    return verdict;
+  }
+
+  /** Собранный ключ: кнопка с резистором 10 кОм — в базу, коллектор через 470 Ом и светодиод. */
+  function keyCanvas(buttonClosed: boolean, collectorResistor = 470, baseResistor = 10_000): CanvasState {
+    return {
+      components: [
+        component('b', 'battery'),
+        component('btn', 'pushbutton', { closed: buttonClosed }),
+        component('rb', 'resistor', { resistance: baseResistor }),
+        component('q', 'transistor'),
+        component('rc', 'resistor', { resistance: collectorResistor }),
+        component('led', 'led'),
+      ],
+      wires: [
+        wire('w1', pin('b', 0), pin('btn', 0)),
+        wire('w2', pin('btn', 1), pin('rb', 0)),
+        wire('w3', pin('rb', 1), pin('q', 0)),
+        wire('w4', pin('b', 0), pin('rc', 0)),
+        wire('w5', pin('rc', 1), pin('led', 0)),
+        wire('w6', pin('led', 1), pin('q', 1)),
+        wire('w7', pin('q', 2), pin('b', 1)),
+      ],
+    };
+  }
+
+  it('замкнутая кнопка, токи в границах — светодиод горит, Диагнозов нет', () => {
+    const verdict = evaluateSwitchKey(keyCanvas(true));
+    expect(verdict.outcome).toBe('correct');
+    expect(verdict.diagnoses).toHaveLength(0);
+  });
+
+  it('кнопка разомкнута — транзистор закрыт: «обрыв» указывает на разомкнутый контакт', () => {
+    const verdict = evaluateSwitchKey(keyCanvas(false));
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses[0].kind).toBe('open-circuit');
+    expect(verdict.diagnoses[0].text).toContain('контакт разомкнут');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'btn' });
+  });
+
+  it('база не подключена (цепь базы забыли) — «обрыв» со свободным выводом транзистора', () => {
+    // кнопка замкнута, но до базы цепь не дотянута: у транзистора свободна база,
+    // у ключа — второй вывод; первым в списке нагрузок стоит транзистор
+    const verdict = evaluateSwitchKey({
+      components: [
+        component('b', 'battery'),
+        component('q', 'transistor'),
+        component('rc', 'resistor', { resistance: 470 }),
+        component('led', 'led'),
+        component('btn', 'pushbutton', { closed: true }),
+      ],
+      wires: [
+        wire('w1', pin('b', 0), pin('rc', 0)),
+        wire('w2', pin('rc', 1), pin('led', 0)),
+        wire('w3', pin('led', 1), pin('q', 1)),
+        wire('w4', pin('q', 2), pin('b', 1)),
+        wire('w5', pin('b', 0), pin('btn', 0)),
+      ],
+    });
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses[0].kind).toBe('open-circuit');
+    expect(verdict.diagnoses[0].text).toContain('не подключ');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'q' });
+  });
+
+  it('коллекторный резистор слишком мал — светодиод на предельном токе: «превышение» с местом ошибки', () => {
+    const verdict = evaluateSwitchKey(keyCanvas(true, 10));
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses[0].kind).toBe('overcurrent');
+    expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'led' });
+  });
+});

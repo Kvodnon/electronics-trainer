@@ -5,6 +5,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
 } from 'react';
 import {
+  pinCountOf,
   suggestPlacementPosition,
   type CanvasAction,
   type CanvasHistory,
@@ -492,7 +493,7 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
         })}
 
         {components.map((component) =>
-          [0, 1].map((pin) => {
+          Array.from({ length: pinCountOf(component.kind) }, (_, pin) => {
             const point = pinPointOf(withDrag(component), pin);
             const isDraftSource =
               wireDraft !== null &&

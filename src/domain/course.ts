@@ -236,7 +236,15 @@ export function sandboxPaletteOf(
  */
 
 /** Идентификатор условного обозначения Компонента; отрисовка — слой UI. */
-export type ComponentSymbolId = 'resistor' | 'dc-source' | 'capacitor' | 'diode' | 'led';
+export type ComponentSymbolId =
+  | 'resistor'
+  | 'dc-source'
+  | 'capacitor'
+  | 'diode'
+  | 'led'
+  | 'transistor'
+  | 'potentiometer'
+  | 'buzzer';
 
 /** Формула на карточке Теории. */
 export interface Formula {

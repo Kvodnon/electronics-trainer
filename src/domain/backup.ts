@@ -3,7 +3,7 @@
  * для переноса в другой браузер или после переустановки. Чистый TypeScript:
  * чтение файла и скачивание живут в слое storage, здесь только формат.
  */
-import { isComponentKind, PIN_COUNT, type CanvasState, type PlacedComponent, type Rotation } from './canvas';
+import { isComponentKind, pinCountOf, type CanvasState, type PlacedComponent, type Rotation } from './canvas';
 import type { CourseProgress, TaskState } from './course';
 import type { SavedCircuit } from './sandbox';
 
@@ -148,8 +148,16 @@ function isPinRef(value: unknown, components: readonly unknown[]): value is { co
   const ref = value as Record<string, unknown>;
   if (typeof ref.componentId !== 'string') return false;
   // Провод обязан держаться за существующий на схеме Компонент.
-  if (!components.some((c) => (c as PlacedComponent)?.id === ref.componentId)) return false;
-  return typeof ref.pin === 'number' && Number.isInteger(ref.pin) && ref.pin >= 0 && ref.pin < PIN_COUNT;
+  const target = components.find((c) => (c as PlacedComponent)?.id === ref.componentId) as
+    | PlacedComponent
+    | undefined;
+  if (target === undefined) return false;
+  return (
+    typeof ref.pin === 'number' &&
+    Number.isInteger(ref.pin) &&
+    ref.pin >= 0 &&
+    ref.pin < pinCountOf(target.kind)
+  );
 }
 
 function isFiniteNumber(value: unknown): value is number {

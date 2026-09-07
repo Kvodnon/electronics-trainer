@@ -435,3 +435,57 @@ describe('Холст М2: конденсатор (тикет 14)', () => {
     expect(unknown).toBe(history);
   });
 });
+
+describe('Холст М2: транзистор, потенциометр и зуммер (тикет 15)', () => {
+  it('Транзистор без номинала, потенциометр — с сопротивлением и движком, зуммер — с сопротивлением', () => {
+    const history = historyWithPlaced(['transistor', 'potentiometer', 'buzzer']);
+    expect(defaultValuesOf('transistor')).toEqual({});
+    expect(defaultValuesOf('potentiometer')).toEqual({ resistance: 10_000, wiper: 0.5 });
+    expect(defaultValuesOf('buzzer')).toEqual({ resistance: 50 });
+    const [transistor, potentiometer, buzzer] = history.present.components;
+    expect(transistor.resistance).toBeUndefined();
+    expect(potentiometer.resistance).toBe(10_000);
+    expect(potentiometer.wiper).toBe(0.5);
+    expect(buzzer.resistance).toBe(50);
+  });
+
+  it('Движок потенциометра правится от 0 до 1, сопротивление — как у резистора', () => {
+    let history = historyWithPlaced(['potentiometer']);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { wiper: 0.75 } });
+    expect(history.present.components[0].wiper).toBe(0.75);
+    history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { resistance: 47_000, wiper: 0.1 } });
+    expect(history.present.components[0]).toMatchObject({ resistance: 47_000, wiper: 0.1 });
+  });
+
+  it('Движок вне [0; 1] и чужие поля отклоняются; у транзистора правимого номинала нет', () => {
+    let history = historyWithPlaced(['potentiometer', 'transistor']);
+    const badWiper = (wiper: number) =>
+      canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { wiper } });
+    expect(badWiper(-0.1)).toBe(history);
+    expect(badWiper(1.1)).toBe(history);
+    expect(badWiper(Number.NaN)).toBe(history);
+    // напряжение — не поле потенциометра
+    const wrongKind = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 5 } });
+    expect(wrongKind).toBe(history);
+    // транзистор — как диод: правимого номинала не имеет
+    const transistorPatch = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { resistance: 100 } });
+    expect(transistorPatch).toBe(history);
+  });
+
+  it('У транзистора и потенциометра три вывода: третий вывод принимает Провода, у резистора его нет', () => {
+    let history = historyWithPlaced(['transistor', 'resistor']);
+    history = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 2 },
+      to: { componentId: 'c2', pin: 0 },
+    });
+    expect(history.present.wires).toHaveLength(1);
+
+    const thirdPinOnTwoPinComponent = canvasReducer(history, {
+      type: 'wire-drawn',
+      from: { componentId: 'c1', pin: 0 },
+      to: { componentId: 'c2', pin: 2 },
+    });
+    expect(thirdPinOnTwoPinComponent).toBe(history);
+  });
+});

@@ -127,6 +127,70 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
       </>
     ),
   },
+  transistor: {
+    name: 'Транзистор (NPN)',
+    gost: (
+      <>
+        {/* база — вывод слева с чертой; сверху коллектор, снизу эмиттер со стрелкой наружу */}
+        {leadLeftTo(50)}
+        <path d="M50 8 V40 M50 16 L86 4 M50 32 L86 44" />
+        <polygon points="75,40 66,41 69,34" fill="currentColor" stroke="none" />
+        <path d="M86 4 H136 M86 44 H136" />
+      </>
+    ),
+    ansi: (
+      <>
+        {/* тот же NPN, но в окружности — частый рисунок в англоязычных схемах */}
+        {leadLeftTo(50)}
+        <circle cx="68" cy="24" r="24" />
+        <path d="M50 8 V40 M50 16 L86 4 M50 32 L86 44" />
+        <polygon points="75,40 66,41 69,34" fill="currentColor" stroke="none" />
+        <path d="M86 4 H136 M86 44 H136" />
+      </>
+    ),
+  },
+  potentiometer: {
+    name: 'Потенциометр',
+    gost: (
+      <>
+        {leadLeftTo(50)}
+        <rect x="50" y="16" width="40" height="16" />
+        {/* стрелка — движок, третий вывод уходит вниз */}
+        <path d="M70 46 V39" />
+        <polygon points="70,31 65.5,39 74.5,39" fill="currentColor" stroke="none" />
+        {leadRightFrom(90)}
+      </>
+    ),
+    ansi: (
+      <>
+        {leadLeftTo(50)}
+        <path d="M50 24 L57 12 L68 36 L79 12 L90 24" />
+        <path d="M70 46 V39" />
+        <polygon points="70,31 65.5,39 74.5,39" fill="currentColor" stroke="none" />
+        {leadRightFrom(90)}
+      </>
+    ),
+  },
+  buzzer: {
+    name: 'Зуммер',
+    gost: (
+      <>
+        {/* звонок: купол над линией выводов (ГОСТ 2.755) */}
+        {leadLeftTo(55)}
+        <path d="M55 24 A15 15 0 0 1 85 24 M55 24 H85" />
+        {leadRightFrom(85)}
+      </>
+    ),
+    ansi: (
+      <>
+        {/* тот же купол с дугами звука — как часто рисуют в англоязычных схемах */}
+        {leadLeftTo(55)}
+        <path d="M55 24 A15 15 0 0 1 85 24 M55 24 H85" />
+        <path d="M92 18 A10 10 0 0 1 92 30 M98 12 A16 16 0 0 1 98 36" />
+        {leadRightFrom(85)}
+      </>
+    ),
+  },
 };
 
 function SymbolFigure({ standard, drawing }: { standard: string; drawing: ReactNode }) {

@@ -1,10 +1,19 @@
 import type { ReactNode } from 'react';
 import type { ComponentKind, LedColor, PlacedComponent } from '../../domain/canvas';
 import type { SymbolStandard } from '../../domain/symbols';
-import { defaultCapacitance, defaultLedColor, defaultValuesOf, valueFieldOf } from '../../domain/canvas';
+import {
+  defaultCapacitance,
+  defaultLedColor,
+  defaultPotentiometerResistance,
+  defaultPotentiometerWiper,
+  defaultValuesOf,
+  valueFieldOf,
+} from '../../domain/canvas';
 import { formatQuantity } from '../../domain/quantity';
 import {
   DIODE_FORWARD_VOLTAGE,
+  TRANSISTOR_BETA,
+  isBuzzerSounding,
   isMotorSpinning,
   lampBrightness,
   ledBrightness,
@@ -16,9 +25,12 @@ import {
  * Условные обозначения Компонентов на Холсте — два набора: ГОСТ (тикет 04)
  * и ANSI (тикет 07); переключение — в Задании, само Холст-состояние оно
  * не трогает. Каждый символ рисуется в локальных координатах: центр (0,0),
- * выводы на (−40, 0) и (+40, 0); слой редактора оборачивает тело
- * в <g transform="translate(x y) rotate(deg)">. У диода вывод 0 — анод:
- * ток проводит «по стрелке» треугольника, от анода к катоду.
+ * у двухвыводных Компонентов выводы на (−40, 0) и (+40, 0); слой редактора
+ * оборачивает тело в <g transform="translate(x y) rotate(deg)">.
+ * У диода вывод 0 — анод: ток проводит «по стрелке» треугольника, от анода
+ * к катоду. У транзистора вывод 0 — база (слева), 1 — коллектор (справа
+ * сверху), 2 — эмиттер (справа снизу, со стрелкой NPN). У потенциометра
+ * выводы 0 и 2 — концы сопротивления, 1 — движок (снизу).
  */
 
 /** Названия Компонентов Палитры (копия UI; идентификаторы — данные домена). */
@@ -32,6 +44,9 @@ export const componentTitles: Record<ComponentKind, string> = {
   diode: 'Диод',
   led: 'Светодиод',
   capacitor: 'Конденсатор',
+  transistor: 'Транзистор',
+  potentiometer: 'Потенциометр',
+  buzzer: 'Зуммер',
 };
 
 /** Названия цветов свечения светодиода (копия UI; идентификаторы — данные домена). */
@@ -62,7 +77,11 @@ export function componentValueLabel(component: PlacedComponent): string {
     case 'voltage':
       return formatQuantity(component.voltage ?? 0, 'В');
     case 'resistance':
-      return formatQuantity(component.resistance ?? 0, 'Ом');
+      return component.kind === 'potentiometer'
+        ? `${formatQuantity(component.resistance ?? defaultPotentiometerResistance, 'Ом')} · ${Math.round(
+            (component.wiper ?? defaultPotentiometerWiper) * 100,
+          )}%`
+        : formatQuantity(component.resistance ?? 0, 'Ом');
     case 'closed':
       return component.closed ? 'замкнут' : 'разомкнут';
     case 'color': {
@@ -72,7 +91,9 @@ export function componentValueLabel(component: PlacedComponent): string {
     case 'capacitance':
       return formatQuantity(component.capacitance ?? defaultCapacitance, 'Ф');
     case 'none':
-      return `порог ${formatQuantity(DIODE_FORWARD_VOLTAGE, 'В')}`;
+      return component.kind === 'transistor'
+        ? `β ≈ ${TRANSISTOR_BETA}`
+        : `порог ${formatQuantity(DIODE_FORWARD_VOLTAGE, 'В')}`;
   }
 }
 
@@ -211,6 +232,33 @@ function GostBody({ component, reading, chargeLevel }: { component: PlacedCompon
           <path d="M-6 -15 V15 M6 -15 V15" />
         </>
       );
+    case 'transistor':
+      return (
+        <>
+          {/* NPN: база — слева с чертой, эмиттер со стрелкой наружу (ГОСТ 2.743) */}
+          <path d="M-40 0 H-12 M-12 -24 V24 M-12 -12 L40 -40 M-12 12 L40 40" />
+          <polygon points="20,29 9,28.5 13,21.5" fill="currentColor" stroke="none" />
+        </>
+      );
+    case 'potentiometer':
+      return (
+        <>
+          {/* резистор со стрелкой-движком, ведущей к выводу снизу (ГОСТ 2.728) */}
+          <Leads from={26} />
+          <rect x="-26" y="-8" width="52" height="16" />
+          <path d="M0 40 V14" />
+          <polygon points="0,6 -4.5,14 4.5,14" fill="currentColor" stroke="none" />
+        </>
+      );
+    case 'buzzer':
+      return (
+        <>
+          {/* звонок: купол над линией выводов (ГОСТ 2.755) */}
+          <Leads from={14} />
+          <path d="M-14 10 A14 14 0 0 1 14 10 M-14 10 H14" />
+          <BuzzerWaves reading={reading} />
+        </>
+      );
   }
 }
 
@@ -301,6 +349,35 @@ function AnsiBody({ component, reading, chargeLevel }: { component: PlacedCompon
           <path d="M6 -15 Q14 0 6 15" />
         </>
       );
+    case 'transistor':
+      return (
+        <>
+          {/* NPN в окружности: стрелка эмиттера наружу, как у ГОСТ */}
+          <circle cx="2" cy="0" r="30" />
+          <path d="M-40 0 H-12 M-12 -24 V24 M-12 -12 L40 -40 M-12 12 L40 40" />
+          <polygon points="20,29 9,28.5 13,21.5" fill="currentColor" stroke="none" />
+        </>
+      );
+    case 'potentiometer':
+      return (
+        <>
+          {/* зигзаг резистора со стрелкой-движком снизу */}
+          <Leads from={26} />
+          <path d="M-26 0 L-19.5 -12 L-6.5 12 L6.5 -12 L19.5 12 L26 0" />
+          <path d="M0 40 V14" />
+          <polygon points="0,6 -4.5,14 4.5,14" fill="currentColor" stroke="none" />
+        </>
+      );
+    case 'buzzer':
+      return (
+        <>
+          {/* тот же купол, но с дугами звука — частый рисунок в англоязычных схемах */}
+          <Leads from={14} />
+          <path d="M-14 10 A14 14 0 0 1 14 10 M-14 10 H14" />
+          <path d="M18 -2 A16 16 0 0 1 18 14 M24 -8 A24 24 0 0 1 24 20" />
+          <BuzzerWaves reading={reading} />
+        </>
+      );
   }
 }
 
@@ -381,6 +458,19 @@ function CapacitorCharge({ level }: { level: number }): ReactNode {
       stroke="none"
       aria-hidden="true"
     />
+  );
+}
+
+/**
+ * Дуги звука зуммера: появляются, когда ток превысил порог звучания,
+ * и пульсируют, пока зуммер звучит (живое поведение Холста).
+ */
+function BuzzerWaves({ reading }: { reading?: ComponentReading }): ReactNode {
+  if (reading === undefined || !isBuzzerSounding(reading)) return null;
+  return (
+    <g className="symbol-buzzer-waves" aria-hidden="true">
+      <path d="M18 -2 A16 16 0 0 1 18 14 M24 -8 A24 24 0 0 1 24 20" />
+    </g>
   );
 }
 

@@ -4,15 +4,17 @@
  * Эквивалентные схемы проходят одинаково — сравнивается физика, не эталон.
  * Чистый TypeScript без DOM.
  */
-import type { CanvasState } from './canvas';
+import { pinKey, type CanvasState } from './canvas';
 import type { CircuitCondition } from './task';
 import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quantity';
 import { COMPONENT_LEXIS, cap, type ComponentLexis } from './componentLexis';
 import { voltageAt, type TransientSolution } from './transient';
 import {
+  BUZZER_SOUND_CURRENT,
   LAMP_LIT_POWER,
   LED_LIT_CURRENT,
   MOTOR_SPIN_POWER,
+  isBuzzerSounding,
   isLampLit,
   isLedLit,
   isMotorSpinning,
@@ -55,6 +57,8 @@ export function checkConditions(
         return checkMeasurement(solution, condition, MEASUREMENT_TRAITS[condition.kind]);
       case 'component-active':
         return checkComponentActive(solution, condition);
+      case 'wiper-voltage':
+        return checkWiperVoltage(solution, condition);
       case 'rc-time-constant':
         return checkTimeConstant(transient, condition);
       case 'capacitor-voltage-at':
@@ -179,7 +183,7 @@ interface ActiveTraits {
 }
 
 /** Порог и глагол активного состояния по виду Компонента. */
-const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
+const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led' | 'buzzer', ActiveTraits> = {
   lamp: {
     valueOf: (reading) => reading.power,
     unit: 'Вт',
@@ -206,6 +210,15 @@ const ACTIVE_TRAITS: Record<'lamp' | 'motor' | 'led', ActiveTraits> = {
     verb: 'светится',
     inactiveNote: 'По условию светодиод не должен светиться.',
     isActive: isLedLit,
+  },
+  buzzer: {
+    valueOf: (reading) => Math.abs(reading.current),
+    unit: 'А',
+    valueName: 'ток',
+    threshold: BUZZER_SOUND_CURRENT,
+    verb: 'звучит',
+    inactiveNote: 'По условию зуммер не должен звучать.',
+    isActive: isBuzzerSounding,
   },
 };
 
@@ -253,6 +266,56 @@ function checkComponentActive(
  * в момент t. Кривая берётся из решения переходного режима; как и у измерений
  * М1, годится любой конденсатор вида, чьё измерение попало в границы.
  */
+
+/**
+ * Напряжение на движке потенциометра — выход делителя: потенциал вывода 1
+ * минус вывод 2 (модуль — ориентация на Холсте не наказывается). Берётся
+ * из узлов решения, поэтому видно и при «висящем» ни к чему не подключённом
+ * движке: его потенциал держат внутренние плечи.
+ */
+function checkWiperVoltage(
+  solution: DcSolution,
+  condition: Extract<CircuitCondition, { kind: 'wiper-voltage' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const potentiometers = readingsOfKind(solution, condition.componentKind);
+  if (potentiometers.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `Напряжение на движке не измерено: на схеме нет ${lexis.genitivePlural}.`,
+    };
+  }
+
+  const measured = potentiometers.map((reading) => {
+    const wiper = solution.pinNodes.get(pinKey(reading.componentId, 1));
+    const bottom = solution.pinNodes.get(pinKey(reading.componentId, 2));
+    return {
+      id: reading.componentId,
+      voltage: Math.abs((wiper?.voltage ?? 0) - (bottom?.voltage ?? 0)),
+    };
+  });
+  const inRange = (entry: { id: string; voltage: number }) =>
+    entry.voltage >= condition.range.from && entry.voltage <= condition.range.to;
+  const distance = (entry: { id: string; voltage: number }) => {
+    if (entry.voltage < condition.range.from) return condition.range.from - entry.voltage;
+    if (entry.voltage > condition.range.to) return entry.voltage - condition.range.to;
+    return 0;
+  };
+  const candidate =
+    measured.find(inRange) ??
+    measured.reduce((best, entry) => (distance(entry) < distance(best) ? entry : best));
+  const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'В');
+  return {
+    condition,
+    passed: inRange(candidate),
+    text: `Напряжение на движке ${lexis.genitive} — ${formatQuantity(candidate.voltage, 'В')}, ${
+      inRange(candidate) ? 'в границах' : 'вне границ'
+    } условия (${bounds}).`,
+    componentId: candidate.id,
+    measured: candidate.voltage,
+  };
+}
 
 /** Проверка постоянной времени RC-цепи по расчёту переходного режима. */
 function checkTimeConstant(

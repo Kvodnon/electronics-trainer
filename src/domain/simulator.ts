@@ -6,8 +6,9 @@
  * Поведенческие модели М1 (учебные, см. spec: Implementation Decisions):
  * - батарея — ЭДС с внутренним сопротивлением: эквивалент Нортона, поэтому
  *   короткое замыкание даёт конечный ток ЭДС/r, а не сингулярную матрицу;
- * - резистор, лампочка, моторчик — линейные резистивные; активность лампочек
- *   и моторчиков определяется мощностью (пороги срабатывания);
+ * - резистор, лампочка, моторчик, зуммер — линейные резистивные; активность
+ *   лампочек и моторчиков определяется мощностью (пороги срабатывания),
+ *   зуммера — током (порог звучания);
  * - выключатель и ключ — замкнутый контакт с малым, разомкнутый с огромным
  *   сопротивлением: обрыв честно даёт ток ≈ 0, не ломая решение.
  *
@@ -15,7 +16,14 @@
  * Проводящее состояние — ЭДС порога с малым последовательным сопротивлением
  * (эквивалент Нортона, как у батареи); запертое — обрыв. Состояние каждого
  * диода угадывается итеративно: схема решается, состояния корректируются, пока
- * не перестанут меняться.
+ * не перестанут меняться. Транзистор NPN — та же итеративная схема для трёх
+ * режимов ключа: отсечка (обрыв), активный режим (источник тока β·Iб) и
+ * насыщение (ЭДС V_кэ нас с малым сопротивлением).
+ *
+ * Три вывода (тикет 15): транзистор (база—эмиттер, коллектор—эмиттер) и
+ * потенциометр (два плеча вокруг движка) дают Компоненту две ветви. Показание
+ * Компонента при этом одно (у транзистора — коллекторный ток и V_кэ), а токи
+ * по выводам — pinCurrents, «уходящие» из каждого вывода во внешнюю цепь.
  *
  * Конденсатор (тикет 14): для постоянного тока — разрыв, поэтому в обычном
  * решении его ветвь разомкнута, а всё установившееся напряжение остаётся
@@ -25,6 +33,7 @@
 import {
   defaultCapacitance,
   defaultLedColor,
+  defaultPotentiometerWiper,
   pinKey,
   type CanvasState,
   type ComponentKind,
@@ -56,6 +65,25 @@ export const LED_MAX_CURRENT = 0.02;
 export const LED_LIT_CURRENT = 0.001;
 /** Ток полного накала светодиода, А: выше — яркость насыщается. */
 export const LED_FULL_CURRENT = 0.02;
+/** Прямой порог перехода база—эмиттер транзистора, В. */
+export const TRANSISTOR_V_BE_ON = 0.7;
+/** Сопротивление открытого перехода база—эмиттер, Ом (поведенческая модель). */
+export const TRANSISTOR_R_BE = 8;
+/** Коэффициент передачи тока транзистора (учебная модель ключа). */
+export const TRANSISTOR_BETA = 100;
+/** Напряжение коллектор—эмиттер в насыщении, В. */
+export const TRANSISTOR_V_CE_SAT = 0.2;
+/** Сопротивление насыщенного перехода коллектор—эмиттер, Ом. */
+export const TRANSISTOR_R_CE_SAT = 2;
+/**
+ * Выходное сопротивление активного транзистора, Ом: параллельно источнику
+ * тока β·Iб — держит матрицу невырожденной, на учебные токи не влияет.
+ */
+export const TRANSISTOR_ACTIVE_RESISTANCE = 1e6;
+/** Ток базы, ниже которого транзистор считается закрытым, А (пыль утечек). */
+export const TRANSISTOR_MIN_BASE_CURRENT = 1e-6;
+/** Порог тока звучания зуммера, А: ниже — молчит. */
+export const BUZZER_SOUND_CURRENT = 0.01;
 /** Защита от колебаний перебора состояний диодов в одном острове. */
 const MAX_DIODE_ITERATIONS = 50;
 
@@ -106,6 +134,9 @@ function companionResistance(timeStep: number, capacitance: number): number {
  * минус вывод 1 (у батареи это напряжение на зажимах); ток — у батареи из
  * «плюса» (вывод 0) во внешнюю цепь, у остальных от вывода 0 к выводу 1;
  * мощность — рассеиваемая у резистивных, отдаваемая у батареи (Вт).
+ * У трёхвыводных Компонентов (транзистор, потенциометр) ток и напряжение —
+ * главные величины модели (у транзистора — коллекторные, у потенциометра —
+ * через вывод 0 насквозь); токи каждого вывода во внешнюю цепь — pinCurrents.
  */
 export interface ComponentReading {
   readonly componentId: string;
@@ -113,6 +144,8 @@ export interface ComponentReading {
   readonly current: number;
   readonly voltage: number;
   readonly power: number;
+  /** Токи, уходящие из каждого вывода Компонента во внешнюю цепь, А. */
+  readonly pinCurrents: readonly number[];
 }
 
 /** Решение схемы постоянного тока: показание на каждый Компонент Холста. */
@@ -179,11 +212,10 @@ export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonl
     }
     const reading = solution.readings.find((candidate) => candidate.componentId === wire.from.componentId);
     if (reading === undefined) return { wireId: wire.id, current: null };
-    // Ток из Компонента в Провод: у батареи — наружу из «плюса» (вывод 0),
-    // у остальных — из вывода 1 (ток течёт от вывода 0 к выводу 1 внутри).
-    const pinSign = wire.from.pin === 0 ? 1 : -1;
-    const kindSign = component.kind === 'battery' ? 1 : -1;
-    return { wireId: wire.id, current: kindSign * pinSign * reading.current };
+    // Ток Провода = ток, уходящий из вывода Компонента во внешнюю цепь:
+    // у батареи из «плюса» наружу, у остальных — из конца ветви, у
+    // трёхвыводных — свой ток каждого вывода (pinCurrents).
+    return { wireId: wire.id, current: reading.pinCurrents[wire.from.pin] ?? null };
   });
 }
 
@@ -221,20 +253,61 @@ export function ledBrightness(reading: ComponentReading): number {
   return Math.min(1, reading.current / LED_FULL_CURRENT);
 }
 
+/** Зуммер звучит: ток не ниже порога звучания (звук не зависит от полярности). */
+export function isBuzzerSounding(reading: ComponentReading): boolean {
+  return Math.abs(reading.current) >= BUZZER_SOUND_CURRENT;
+}
+
+/**
+ * Режим транзистора в решении: состояние итеративного угадывания, как у диодов.
+ * База открыта → не отсечка; насыщение → переход коллектор—эмиттер полностью
+ * раскрыт, иначе активный режим (ток коллектора = β·Iб).
+ */
+export interface TransistorState {
+  readonly baseOn: boolean;
+  readonly saturated: boolean;
+  /** Ток базы предыдущей итерации, А — источник тока активного режима. */
+  readonly baseCurrent: number;
+}
+
+/** Отсечка: база закрыта, коллекторная ветвь — обрыв. */
+const TRANSISTOR_OFF: TransistorState = { baseOn: false, saturated: false, baseCurrent: 0 };
+
 /** Ниже этой величины ток и мощность — числовая пыль разомкнутых контактов. */
 const NUMERICAL_DUST = 1e-7;
 
-/** Сопротивление ветви по виду и номиналу Компонента (с переопределением контактов). */
-function branchResistance(
-  component: PlacedComponent,
-  contactStates?: ReadonlyMap<string, boolean>,
-): number {
+/**
+ * Минимальное сопротивление плеча потенциометра, Ом: движок на краю пути —
+ * почти контакт, но нулевая проводимость выродила бы матрицу.
+ */
+const WIPER_END_RESISTANCE = 1e-3;
+
+/**
+ * Сопротивление плеча потенциометра, Ом: движок делит общее сопротивление
+ * по положению (wiper — доля между выводом 0 и движком).
+ */
+export function potentiometerPartResistance(component: PlacedComponent, part: 0 | 1): number {
+  const total = component.resistance ?? Number.POSITIVE_INFINITY;
+  const wiper = component.wiper ?? defaultPotentiometerWiper;
+  const share = part === 0 ? wiper : 1 - wiper;
+  return Math.max(total * share, WIPER_END_RESISTANCE);
+}
+
+/**
+ * Сопротивление ветви по виду и номиналу Компонента (с переопределением
+ * контактов). Диоды и транзистор штемпелюются по своему состоянию отдельно;
+ * здесь запертый переход — обрыв, у активного транзистора ветвь ведёт себя
+ * как большое выходное сопротивление.
+ */
+function branchResistance(branch: Branch, contactStates?: ReadonlyMap<string, boolean>): number {
+  const component = branch.component;
   switch (component.kind) {
     case 'battery':
       return BATTERY_INTERNAL_RESISTANCE;
     case 'resistor':
     case 'lamp':
     case 'motor':
+    case 'buzzer':
       return component.resistance ?? Number.POSITIVE_INFINITY;
     case 'switch':
     case 'pushbutton': {
@@ -244,6 +317,11 @@ function branchResistance(
     case 'diode':
     case 'led':
       // запертое состояние диода — обрыв; проводящее штемпелюется отдельно
+      return OPEN_CONTACT_RESISTANCE;
+    case 'potentiometer':
+      // движок делит общее сопротивление на два плеча: ветвь — по своему краю
+      return potentiometerPartResistance(component, branch.pinA === 0 ? 0 : 1);
+    case 'transistor':
       return OPEN_CONTACT_RESISTANCE;
     case 'capacitor':
       // для постоянного тока конденсатор — разрыв; переходный режим штемпелюет компаньона
@@ -262,11 +340,43 @@ export function forwardVoltageOf(component: PlacedComponent): number {
   return DIODE_FORWARD_VOLTAGE;
 }
 
-/** Ветвь схемы: Компонент между узлами своих выводов (0 → A, 1 → B). */
+/**
+ * Ветвь схемы: Компонент между узлами двух своих выводов. Большинство
+ * Компонентов имеют одну ветвь (выводы 0 → 1); у транзистора две — переход
+ * база—эмиттер и переход коллектор—эмиттер, у потенциометра две — плечи
+ * вокруг движка.
+ */
 interface Branch {
   readonly component: PlacedComponent;
+  /** Выводы Компонента на концах ветви. */
+  readonly pinA: number;
+  readonly pinB: number;
   readonly nodeA: number;
   readonly nodeB: number;
+}
+
+/** Ветви Компонента: две у трёхвыводных, одна у остальных. */
+function branchesOf(
+  component: PlacedComponent,
+  nodeOf: (componentId: string, pin: number) => number,
+): Branch[] {
+  if (component.kind === 'transistor') {
+    // выводы: 0 — база, 1 — коллектор, 2 — эмиттер
+    return [
+      { component, pinA: 0, pinB: 2, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 2) },
+      { component, pinA: 1, pinB: 2, nodeA: nodeOf(component.id, 1), nodeB: nodeOf(component.id, 2) },
+    ];
+  }
+  if (component.kind === 'potentiometer') {
+    // выводы: 0 и 2 — концы сопротивления, 1 — движок
+    return [
+      { component, pinA: 0, pinB: 1, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 1) },
+      { component, pinA: 1, pinB: 2, nodeA: nodeOf(component.id, 1), nodeB: nodeOf(component.id, 2) },
+    ];
+  }
+  return [
+    { component, pinA: 0, pinB: 1, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 1) },
+  ];
 }
 
 /** Система непересекающихся множеств с двухпроходным сжатием путей. */
@@ -325,11 +435,7 @@ export function solveDc(canvas: CanvasState, options: DcSolveOptions = {}): DcSo
     return index;
   };
 
-  const branches: Branch[] = canvas.components.map((component) => ({
-    component,
-    nodeA: nodeOf(component.id, 0),
-    nodeB: nodeOf(component.id, 1),
-  }));
+  const branches: Branch[] = canvas.components.flatMap((component) => branchesOf(component, nodeOf));
 
   // Остров — множество узлов, соединённых ветвями; имя острова — корень объединения
   const islandSets = new DisjointSet();
@@ -350,8 +456,9 @@ export function solveDc(canvas: CanvasState, options: DcSolveOptions = {}): DcSo
     if (energizesIsland(branch)) sourceIslands.add(findIsland(branch.nodeA));
   }
 
-  // Проводящие диоды: состояния угадываются итеративно в каждом острове.
+  // Проводящие диоды и состояния транзисторов: угадываются итеративно в каждом острове.
   const conductingDiodes = new Set<string>();
+  const transistorStates = new Map<string, TransistorState>();
   for (const islandRoot of sourceIslands) {
     const ground = (
       branches.find(
@@ -359,35 +466,53 @@ export function solveDc(canvas: CanvasState, options: DcSolveOptions = {}): DcSo
       ) ??
       branches.find((branch) => energizesIsland(branch) && findIsland(branch.nodeA) === islandRoot)!
     ).nodeB;
-    for (const id of solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage, options)) {
-      conductingDiodes.add(id);
-    }
+    const island = solveIsland(branches, islandRoot, ground, findIsland, nodeVoltage, options);
+    for (const id of island.conductingDiodes) conductingDiodes.add(id);
+    for (const [id, state] of island.transistors) transistorStates.set(id, state);
   }
 
-  const readings = branches.map((branch) =>
-    readingOfBranch(branch, nodeVoltage, conductingDiodes, options),
+  // Ветви по Компонентам: показание строится по всем ветвям Компонента сразу.
+  const branchesByComponent = new Map<string, Branch[]>();
+  for (const branch of branches) {
+    const own = branchesByComponent.get(branch.component.id) ?? [];
+    own.push(branch);
+    branchesByComponent.set(branch.component.id, own);
+  }
+
+  const readings = canvas.components.map((component) =>
+    readingOfComponent(
+      component,
+      branchesByComponent.get(component.id) ?? [],
+      nodeVoltage,
+      conductingDiodes,
+      transistorStates,
+      options,
+    ),
   );
   const pinNodes = new Map<string, PinNode>();
   for (const branch of branches) {
-    pinNodes.set(pinKey(branch.component.id, 0), {
-      island: findIsland(branch.nodeA),
-      voltage: nodeVoltage[branch.nodeA],
-    });
-    pinNodes.set(pinKey(branch.component.id, 1), {
-      island: findIsland(branch.nodeB),
-      voltage: nodeVoltage[branch.nodeB],
-    });
+    for (const [pin, node] of [
+      [branch.pinA, branch.nodeA],
+      [branch.pinB, branch.nodeB],
+    ] as const) {
+      pinNodes.set(pinKey(branch.component.id, pin), {
+        island: findIsland(node),
+        voltage: nodeVoltage[node],
+      });
+    }
   }
   return { readings, pinNodes };
 }
 
 /**
  * Собирает и решает узловые уравнения одного острова с «землёй» ground.
- * Диоды острова нелинейны, поэтому решение итеративное: все диоды стартуют
- * запертыми; после каждого решения состояние диода правится (открылся при
- * напряжении выше порога, закрылся при исчезновении прямого тока), пока
- * состояния не перестанут меняться. Возвращает множество проводящих диодов.
- * Проба Thevenin лине́йна: диоды остаются запертыми, итерации не нужны.
+ * Диоды и транзисторы острова нелинейны, поэтому решение итеративное: все
+ * диоды стартуют запертыми, все транзисторы — отсечкой; после каждого решения
+ * состояния правятся (диод открылся при напряжении выше порога, транзистор —
+ * по току базы и напряжению коллектор—эмиттер), пока состояния не перестанут
+ * меняться. Возвращает проводящие диоды и итоговые состояния транзисторов.
+ * Проба Thevenin лине́йна: нелинейные приборы остаются запертыми, итерации
+ * не нужны.
  */
 function solveIsland(
   branches: readonly Branch[],
@@ -396,7 +521,7 @@ function solveIsland(
   findIsland: (node: number) => string,
   nodeVoltage: number[],
   options: DcSolveOptions,
-): Set<string> {
+): { conductingDiodes: Set<string>; transistors: Map<string, TransistorState> } {
   const inIsland = (branch: Branch): boolean =>
     findIsland(branch.nodeA) === islandRoot || findIsland(branch.nodeB) === islandRoot;
 
@@ -410,7 +535,7 @@ function solveIsland(
       if (options.theveninProbeOf === branch.component.id) return false;
       return options.capacitorStates?.has(branch.component.id) ?? false;
     }
-    return Number.isFinite(branchResistance(branch.component, options.contactStates));
+    return Number.isFinite(branchResistance(branch, options.contactStates));
   };
   const nodeHasConductance = new Set<number>();
   for (const branch of branches) {
@@ -430,8 +555,16 @@ function solveIsland(
   }
 
   const conducting = new Set<string>();
+  const transistors = new Map<string, TransistorState>();
+  /**
+   * База, однажды закрытая за нехваткой тока (утечка разомкнутого контакта),
+   * не открывается снова, пока решается этот остров: иначе состояние
+   * колебалось бы «открылся — ток ничтожен — закрылся — напряжение снова
+   * выше порога…» до предела итераций.
+   */
+  const starvedBases = new Set<string>();
   for (let iteration = 0; ; iteration += 1) {
-    solveWithDiodeStates(branches, inIsland, localIndex, conducting, nodeVoltage, options);
+    solveWithDiodeStates(branches, inIsland, localIndex, conducting, transistors, nodeVoltage, options);
 
     if (options.theveninProbeOf !== undefined) break; // проба — линейная задача
 
@@ -449,17 +582,94 @@ function solveIsland(
         changed = true;
       }
     }
+    changed = updateTransistors(branches, inIsland, transistors, starvedBases, nodeVoltage) || changed;
     if (!changed || iteration >= MAX_DIODE_ITERATIONS) break;
   }
-  return conducting;
+  return { conductingDiodes: conducting, transistors };
 }
 
-/** Одно решение узловых уравнений при фиксированных состояниях диодов. */
+/**
+ * Корректирует состояния транзисторов по свежему решению. Правила переходов
+ * (пока база не «об голодала»): напряжение база—эмиттер дошло до порога —
+ * открыться; ток базы ничтожен (или отрицателен) — закрыться; в активном
+ * режиме напряжение коллектор—эмиттер упало до насыщения — сесть в насыщение;
+ * в насыщении цепь коллектора требует тока больше β·Iб — вернуться в активный
+ * режим. Возвращает true, если хотя бы одно состояние изменилось.
+ */
+function updateTransistors(
+  branches: readonly Branch[],
+  inIsland: (branch: Branch) => boolean,
+  transistors: Map<string, TransistorState>,
+  starvedBases: Set<string>,
+  nodeVoltage: readonly number[],
+): boolean {
+  // Пара ветвей транзистора: переход база—эмиттер и переход коллектор—эмиттер.
+  const pairs = new Map<string, { base?: Branch; collector?: Branch }>();
+  for (const branch of branches) {
+    if (!inIsland(branch) || branch.component.kind !== 'transistor') continue;
+    const pair = pairs.get(branch.component.id) ?? {};
+    if (branch.pinA === 0) pair.base = branch;
+    else pair.collector = branch;
+    pairs.set(branch.component.id, pair);
+  }
+
+  let changed = false;
+  for (const [id, { base, collector }] of pairs) {
+    if (base === undefined || collector === undefined) continue;
+    const emitter = base.nodeB;
+    const vBE = nodeVoltage[base.nodeA] - nodeVoltage[emitter];
+    const vCE = nodeVoltage[collector.nodeA] - nodeVoltage[emitter];
+    const state = transistors.get(id) ?? TRANSISTOR_OFF;
+    const baseCurrentOf = (vBE - TRANSISTOR_V_BE_ON) / TRANSISTOR_R_BE;
+
+    if (!state.baseOn) {
+      if (!starvedBases.has(id) && vBE >= TRANSISTOR_V_BE_ON) {
+        transistors.set(id, { baseOn: true, saturated: false, baseCurrent: 0 });
+        changed = true;
+      }
+      continue;
+    }
+    if (baseCurrentOf < TRANSISTOR_MIN_BASE_CURRENT) {
+      // тока базы нет: отсечка (заодно отсекает открытие током утечки)
+      transistors.set(id, TRANSISTOR_OFF);
+      starvedBases.add(id);
+      changed = true;
+      continue;
+    }
+    if (!state.saturated) {
+      if (vCE < TRANSISTOR_V_CE_SAT) {
+        transistors.set(id, { baseOn: true, saturated: true, baseCurrent: baseCurrentOf });
+      } else if (Math.abs(baseCurrentOf - state.baseCurrent) > BASE_CURRENT_EPSILON) {
+        transistors.set(id, { baseOn: true, saturated: false, baseCurrent: baseCurrentOf });
+      } else {
+        continue;
+      }
+      changed = true;
+      continue;
+    }
+    const collectorCurrent = (vCE - TRANSISTOR_V_CE_SAT) / TRANSISTOR_R_CE_SAT;
+    if (collectorCurrent > TRANSISTOR_BETA * baseCurrentOf) {
+      // цепь коллектора требует тока, которого β·Iб не даёт, — это не насыщение
+      transistors.set(id, { baseOn: true, saturated: false, baseCurrent: baseCurrentOf });
+      changed = true;
+    } else if (Math.abs(baseCurrentOf - state.baseCurrent) > BASE_CURRENT_EPSILON) {
+      transistors.set(id, { baseOn: true, saturated: true, baseCurrent: baseCurrentOf });
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Разница токов базы между итерациями ниже этой величины сошлась. */
+const BASE_CURRENT_EPSILON = 1e-12;
+
+/** Одно решение узловых уравнений при фиксированных состояниях диодов и транзисторов. */
 function solveWithDiodeStates(
   branches: readonly Branch[],
   inIsland: (branch: Branch) => boolean,
   localIndex: Map<number, number>,
   conducting: Set<string>,
+  transistors: ReadonlyMap<string, TransistorState>,
   nodeVoltage: number[],
   options: DcSolveOptions,
 ): void {
@@ -486,6 +696,11 @@ function solveWithDiodeStates(
     const lb = localIndex.get(branch.nodeB);
     if (la !== undefined) injection[la] += emf / resistance;
     if (lb !== undefined) injection[lb] -= emf / resistance;
+  };
+
+  /** Запертый нелинейный переход: обрыв без вырождения матрицы. */
+  const stampOpenBranch = (branch: Branch): void => {
+    stampConductance(branch.nodeA, branch.nodeB, 1 / OPEN_CONTACT_RESISTANCE);
   };
 
   for (const branch of branches) {
@@ -519,8 +734,16 @@ function solveWithDiodeStates(
     } else if (isDiodeKind(branch.component.kind) && conducting.has(branch.component.id)) {
       // проводящий диод — ЭДС порога с малым последовательным сопротивлением
       stampNorton(branch, DIODE_ON_RESISTANCE, forwardVoltageOf(branch.component));
+    } else if (branch.component.kind === 'transistor') {
+      stampTransistorBranch(branch, transistors.get(branch.component.id) ?? TRANSISTOR_OFF, {
+        localIndex,
+        stampConductance,
+        stampNorton,
+        stampOpenBranch,
+        injection,
+      });
     } else {
-      const resistance = branchResistance(branch.component, options.contactStates);
+      const resistance = branchResistance(branch, options.contactStates);
       if (Number.isFinite(resistance) && resistance > 0) {
         stampConductance(branch.nodeA, branch.nodeB, 1 / resistance);
       }
@@ -529,6 +752,55 @@ function solveWithDiodeStates(
 
   const potentials = solveLinearSystem(conductance, injection);
   for (const [node, local] of localIndex) nodeVoltage[node] = potentials[local];
+}
+
+/** Штемпелёры одной ветви — общий набор для модели транзистора. */
+interface BranchStamps {
+  readonly localIndex: Map<number, number>;
+  readonly stampConductance: (a: number, b: number, g: number) => void;
+  readonly stampNorton: (branch: Branch, resistance: number, emf: number) => void;
+  readonly stampOpenBranch: (branch: Branch) => void;
+  readonly injection: number[];
+}
+
+/**
+ * Ветвь транзистора по его режиму: база—эмиттер — как диод (порог с малым
+ * сопротивлением) или обрыв; коллектор—эмиттер в насыщении — ЭДС V_кэ нас с
+ * малым сопротивлением, в активном режиме — источник тока β·Iб с большим
+ * выходным сопротивлением, в отсечке — обрыв.
+ */
+function stampTransistorBranch(
+  branch: Branch,
+  state: TransistorState,
+  stamps: BranchStamps,
+): void {
+  if (branch.pinA === 0) {
+    // переход база—эмиттер
+    if (!state.baseOn) {
+      stamps.stampOpenBranch(branch);
+      return;
+    }
+    stamps.stampNorton(branch, TRANSISTOR_R_BE, TRANSISTOR_V_BE_ON);
+    return;
+  }
+  // переход коллектор—эмиттер
+  if (!state.baseOn) {
+    stamps.stampOpenBranch(branch);
+    return;
+  }
+  if (state.saturated) {
+    stamps.stampNorton(branch, TRANSISTOR_R_CE_SAT, TRANSISTOR_V_CE_SAT);
+    return;
+  }
+  // активный режим: ток β·Iб уходит из коллектора в эмиттер. Правило узлов:
+  // положительное впрыскивание — источник вливает ток в узел, поэтому
+  // коллектору ток вычитается, эмиттеру — прибавляется.
+  stamps.stampConductance(branch.nodeA, branch.nodeB, 1 / TRANSISTOR_ACTIVE_RESISTANCE);
+  const current = TRANSISTOR_BETA * state.baseCurrent;
+  const collector = stamps.localIndex.get(branch.nodeA);
+  const emitter = stamps.localIndex.get(branch.nodeB);
+  if (collector !== undefined) stamps.injection[collector] -= current;
+  if (emitter !== undefined) stamps.injection[emitter] += current;
 }
 
 /** Метод Гаусса с выбором ведущего элемента; матрицы Холста малы. */
@@ -559,25 +831,39 @@ function solveLinearSystem(a: number[][], b: number[]): number[] {
   return x;
 }
 
-/** Показание ветви по узловым потенциалам, состояниям диодов и опциям решателя. */
-function readingOfBranch(
-  branch: Branch,
+/**
+ * Показание Компонента по узловым потенциалам и состояниям нелинейных
+ * приборов. У трёхвыводных Компонентов ветвей две, и показание собирается
+ * из них: транзистор отчитывается коллекторным током и V_кэ, потенциометр —
+ * сквозным током и полным напряжением; токи выводов — в pinCurrents.
+ */
+function readingOfComponent(
+  component: PlacedComponent,
+  branches: readonly Branch[],
   nodeVoltage: readonly number[],
   conductingDiodes: ReadonlySet<string>,
+  transistors: ReadonlyMap<string, TransistorState>,
   options: DcSolveOptions = {},
 ): ComponentReading {
-  const { component } = branch;
+  if (component.kind === 'transistor' && branches.length === 2) {
+    return transistorReading(component, branches, nodeVoltage, transistors);
+  }
+  if (component.kind === 'potentiometer' && branches.length === 2) {
+    return potentiometerReading(component, branches, nodeVoltage);
+  }
+  const branch = branches[0]!;
   const voltage = nodeVoltage[branch.nodeA] - nodeVoltage[branch.nodeB];
+  const reading = (current: number, power = Math.abs(voltage * current)): ComponentReading => ({
+    componentId: component.id,
+    kind: component.kind,
+    current: snapToZero(current),
+    voltage,
+    power: snapToZero(power),
+    pinCurrents: twoPinCurrents(component.kind, snapToZero(current)),
+  });
   if (component.kind === 'battery') {
     const emf = component.voltage ?? 0;
-    const current = (emf - voltage) / BATTERY_INTERNAL_RESISTANCE;
-    return {
-      componentId: component.id,
-      kind: component.kind,
-      current: snapToZero(current),
-      voltage,
-      power: snapToZero(voltage * current),
-    };
+    return reading((emf - voltage) / BATTERY_INTERNAL_RESISTANCE, voltage * ((emf - voltage) / BATTERY_INTERNAL_RESISTANCE));
   }
   if (component.kind === 'capacitor') {
     // компаньон переходного режима: ток восстанавливается по его уравнению,
@@ -588,34 +874,79 @@ function readingOfBranch(
       state !== undefined && resistance > 0
         ? (voltage - state.voltage) / resistance - state.current
         : 0;
-    return {
-      componentId: component.id,
-      kind: component.kind,
-      current: snapToZero(current),
-      voltage,
-      power: snapToZero(Math.abs(voltage * current)),
-    };
+    return reading(current, Math.abs(voltage * current));
   }
   if (isDiodeKind(component.kind)) {
     const current = conductingDiodes.has(component.id)
       ? (voltage - forwardVoltageOf(component)) / DIODE_ON_RESISTANCE
       : 0;
-    return {
-      componentId: component.id,
-      kind: component.kind,
-      current: snapToZero(current),
-      voltage,
-      power: snapToZero(Math.abs(voltage * current)),
-    };
+    return reading(current);
   }
-  const resistance = branchResistance(component);
+  const resistance = branchResistance(branch);
   const current = Number.isFinite(resistance) ? voltage / resistance : 0;
+  return reading(current);
+}
+
+/** Токи двухвыводного Компонента: наружу из конца ветви, внутрь из начала. */
+function twoPinCurrents(kind: ComponentKind, current: number): readonly number[] {
+  return kind === 'battery' ? [current, -current] : [-current, current];
+}
+
+/** Показание транзистора: коллекторный ток и напряжение коллектор—эмиттер. */
+function transistorReading(
+  component: PlacedComponent,
+  branches: readonly Branch[],
+  nodeVoltage: readonly number[],
+  transistors: ReadonlyMap<string, TransistorState>,
+): ComponentReading {
+  const baseBranch = branches.find((branch) => branch.pinA === 0)!;
+  const collectorBranch = branches.find((branch) => branch.pinA === 1)!;
+  const emitter = nodeVoltage[baseBranch.nodeB];
+  const vBE = nodeVoltage[baseBranch.nodeA] - emitter;
+  const vCE = nodeVoltage[collectorBranch.nodeA] - emitter;
+  const state = transistors.get(component.id) ?? TRANSISTOR_OFF;
+  const baseCurrent = state.baseOn ? (vBE - TRANSISTOR_V_BE_ON) / TRANSISTOR_R_BE : 0;
+  const collectorCurrent = !state.baseOn
+    ? 0
+    : state.saturated
+      ? (vCE - TRANSISTOR_V_CE_SAT) / TRANSISTOR_R_CE_SAT
+      : TRANSISTOR_BETA * baseCurrent;
+  const current = snapToZero(collectorCurrent);
   return {
     componentId: component.id,
     kind: component.kind,
-    current: snapToZero(current),
-    voltage,
-    power: snapToZero(Math.abs(voltage * current)),
+    current,
+    voltage: vCE,
+    power: snapToZero(Math.abs(vCE * collectorCurrent) + Math.abs(vBE * baseCurrent)),
+    pinCurrents: [
+      -baseCurrent,
+      -collectorCurrent,
+      baseCurrent + collectorCurrent,
+    ].map(snapToZero),
+  };
+}
+
+/** Показание потенциометра: сквозной ток и полное напряжение, токи плеч. */
+function potentiometerReading(
+  component: PlacedComponent,
+  branches: readonly Branch[],
+  nodeVoltage: readonly number[],
+): ComponentReading {
+  const firstPart = branches.find((branch) => branch.pinA === 0)!;
+  const secondPart = branches.find((branch) => branch.pinA === 1)!;
+  const v0 = nodeVoltage[firstPart.nodeA];
+  const v1 = nodeVoltage[firstPart.nodeB];
+  const v2 = nodeVoltage[secondPart.nodeB];
+  const firstCurrent = (v0 - v1) / potentiometerPartResistance(component, 0);
+  const secondCurrent = (v1 - v2) / potentiometerPartResistance(component, 1);
+  const current = snapToZero(firstCurrent);
+  return {
+    componentId: component.id,
+    kind: component.kind,
+    current,
+    voltage: v0 - v2,
+    power: snapToZero(Math.abs((v0 - v1) * firstCurrent) + Math.abs((v1 - v2) * secondCurrent)),
+    pinCurrents: [-firstCurrent, firstCurrent - secondCurrent, secondCurrent].map(snapToZero),
   };
 }
 

@@ -225,6 +225,62 @@ describe('checkConditions: активное состояние', () => {
     expect(dark.passed).toBe(false);
     expect(dark.text).toContain('не светится');
   });
+
+  it('зуммер звучит при токе выше порога и молчит ниже — в Разборе ток', () => {
+    const loud = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 100 }), component('bz', 'buzzer')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('bz', 0)), wire('w3', pin('bz', 1), pin('b', 1))],
+    );
+    const sounding = check(loud, { kind: 'component-active', componentKind: 'buzzer', active: true });
+    expect(sounding.passed).toBe(true);
+    expect(sounding.text).toContain('звучит');
+    expect(sounding.text).toContain('ток');
+
+    const quiet = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 2000 }), component('bz', 'buzzer')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('bz', 0)), wire('w3', pin('bz', 1), pin('b', 1))],
+    );
+    const silent = check(quiet, { kind: 'component-active', componentKind: 'buzzer', active: true });
+    expect(silent.passed).toBe(false);
+    expect(silent.text).toContain('не звучит');
+  });
+});
+
+describe('checkConditions: напряжение на движке потенциометра (тикет 15)', () => {
+  /** Делитель: батарея 9 В на концах потенциометра, движок — выход. */
+  function divider(wiper: number): CanvasState {
+    return canvasOf(
+      [component('b', 'battery'), component('pot', 'potentiometer', { wiper })],
+      [wire('w1', pin('b', 0), pin('pot', 0)), wire('w2', pin('pot', 2), pin('b', 1))],
+    );
+  }
+
+  const condition = {
+    kind: 'wiper-voltage',
+    componentKind: 'potentiometer',
+    range: { from: 3, to: 5 },
+  } as const;
+
+  it('напряжение с движка в границах — выполнено, строка называет измерение', () => {
+    const result = check(divider(0.5), condition);
+    expect(result.passed).toBe(true);
+    expect(result.text).toContain('движке потенциометра');
+    expect(result.text).toContain('4,5 В');
+    expect(result.text).toContain('3–5 В');
+  });
+
+  it('движок у края — напряжение вне границ, строка называет факт', () => {
+    const result = check(divider(0.1), condition);
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('вне границ');
+    expect(result.measured).toBeGreaterThan(5);
+  });
+
+  it('потенциометра на схеме нет — измерение честно не выполнено', () => {
+    const result = check(litLampCanvas(), condition);
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет потенциометров');
+  });
 });
 
 describe('checkConditions: измерения во времени (тикет 14)', () => {

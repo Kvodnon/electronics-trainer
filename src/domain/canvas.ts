@@ -5,9 +5,6 @@
  */
 import { clampPosition, snapToGrid } from './canvasGeometry';
 
-/** Выводы нумеруются слева направо (до поворота); у батареи вывод 0 — «плюс». */
-export const PIN_COUNT = 2;
-
 /** Виды Компонентов Палитры М1. Растёт вместе с Модулями (М2+). */
 export const componentKinds = [
   'battery',
@@ -19,6 +16,9 @@ export const componentKinds = [
   'diode',
   'led',
   'capacitor',
+  'transistor',
+  'potentiometer',
+  'buzzer',
 ] as const;
 
 /** Тип выводится из списка: список и тип не могут разойтись. */
@@ -39,6 +39,18 @@ export const defaultLedColor: LedColor = 'red';
  */
 export const defaultCapacitance = 100e-6;
 
+/**
+ * Общее сопротивление потенциометра по умолчанию, Ом: 10 кОм — типовой
+ * учебный номинал для делителя напряжения.
+ */
+export const defaultPotentiometerResistance = 10000;
+
+/** Положение движка потенциометра по умолчанию: посередине, делит пополам. */
+export const defaultPotentiometerWiper = 0.5;
+
+/** Сопротивление зуммера по умолчанию, Ом — учебный активный звукоизлучатель. */
+export const defaultBuzzerResistance = 50;
+
 /** Это цвет свечения светодиода? */
 export function isLedColor(value: unknown): value is LedColor {
   return typeof value === 'string' && (ledColors as readonly string[]).includes(value);
@@ -49,15 +61,25 @@ export function isComponentKind(value: unknown): value is ComponentKind {
   return typeof value === 'string' && (componentKinds as readonly string[]).includes(value);
 }
 
+/**
+ * Число выводов вида: у транзистора — база (0), коллектор (1) и эмиттер (2);
+ * у потенциометра — два конца (0 и 2) и движок (1). Остальные — два вывода.
+ */
+export function pinCountOf(kind: ComponentKind): number {
+  return kind === 'transistor' || kind === 'potentiometer' ? 3 : 2;
+}
+
 /** Поворот Компонента шагами 90° по часовой стрелке. */
 export type Rotation = 0 | 90 | 180 | 270;
 
 /**
  * Компонент на Холсте: вид из Палитры, центр в координатах сетки, поворот
  * и номиналы. Номинал зависит от вида: батарея — voltage (В);
- * резистор, лампа, мотор — resistance (Ом); выключатель и ключ — closed;
- * светодиод — color (цвет свечения и заодно прямой порог); диод правимого
- * номинала не имеет; конденсатор — capacitance (Ф).
+ * резистор, лампа, мотор, зуммер — resistance (Ом); выключатель и ключ — closed;
+ * светодиод — color (цвет свечения и заодно прямой порог); диод и транзистор
+ * правимого номинала не имеют; конденсатор — capacitance (Ф);
+ * потенциометр — resistance (общее) и wiper (движок, доля от 0 до 1 между
+ * выводом 0 и движком).
  */
 export interface PlacedComponent {
   readonly id: string;
@@ -70,6 +92,7 @@ export interface PlacedComponent {
   readonly closed?: boolean;
   readonly color?: LedColor;
   readonly capacitance?: number;
+  readonly wiper?: number;
 }
 
 /** Ссылка на вывод Компонента: идентификатор и номер вывода. */
@@ -123,6 +146,7 @@ export interface ComponentValuePatch {
   readonly closed?: boolean;
   readonly color?: LedColor;
   readonly capacitance?: number;
+  readonly wiper?: number;
 }
 
 /** История Холста: undo/redo — часть состояния, редьюсер остаётся чистым. */
@@ -146,6 +170,9 @@ const DEFAULT_VALUES: Record<ComponentKind, Omit<PlacedComponent, 'id' | 'kind' 
   diode: {},
   led: { color: 'red' },
   capacitor: { capacitance: defaultCapacitance },
+  transistor: {},
+  potentiometer: { resistance: defaultPotentiometerResistance, wiper: defaultPotentiometerWiper },
+  buzzer: { resistance: defaultBuzzerResistance },
 };
 
 /** Какое номинальное поле носит вид Компонента. */
@@ -161,6 +188,9 @@ const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   diode: 'none',
   led: 'color',
   capacitor: 'capacitance',
+  transistor: 'none',
+  potentiometer: 'resistance',
+  buzzer: 'resistance',
 };
 
 /** Поле номинала вида: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — состояние. */
@@ -201,9 +231,9 @@ function samePin(a: PinRef, b: PinRef): boolean {
   return a.componentId === b.componentId && a.pin === b.pin;
 }
 
-/** Существует ли вывод с таким номером у Компонентов М1? */
-function isValidPin(pin: number): boolean {
-  return Number.isInteger(pin) && pin >= 0 && pin < PIN_COUNT;
+/** Существует ли вывод с таким номером у этого Компонента? */
+function isValidPin(component: PlacedComponent, pin: number): boolean {
+  return Number.isInteger(pin) && pin >= 0 && pin < pinCountOf(component.kind);
 }
 
 /** Следующий поворот по часовой стрелке: 0 → 90 → 180 → 270 → 0. */
@@ -271,7 +301,7 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
       const to = state.components.find((c) => c.id === action.to.componentId);
       // Выводы должны существовать и различаться.
       if (!from || !to) return history;
-      if (!isValidPin(action.from.pin) || !isValidPin(action.to.pin)) return history;
+      if (!isValidPin(from, action.from.pin) || !isValidPin(to, action.to.pin)) return history;
       if (samePin(action.from, action.to)) return history;
       // Тот же переход уже соединён — второй Провод не нужен.
       const already = state.wires.some(
@@ -328,7 +358,8 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
  * Правка номинала: остаётся только поле своего вида (лампа не «напрягается»
  * чужим напряжением) и только конечное положительное число — обрыв цепи
  * рисуется удалением Компонента, а не нулевым сопротивлением. Некорректная
- * правка отклоняется целиком.
+ * правка отклоняется целиком. У потенциометра два поля: сопротивление
+ * и движок (доля от 0 до 1), правятся и вместе, и по отдельности.
  */
 function applicableValuePatch(
   kind: ComponentKind,
@@ -340,9 +371,11 @@ function applicableValuePatch(
         ? { voltage: patch.voltage }
         : null;
     case 'resistance':
-      return patch.resistance !== undefined && isPositiveNumber(patch.resistance)
-        ? { resistance: patch.resistance }
-        : null;
+      return kind === 'potentiometer'
+        ? potentiometerPatch(patch)
+        : patch.resistance !== undefined && isPositiveNumber(patch.resistance)
+          ? { resistance: patch.resistance }
+          : null;
     case 'closed':
       return patch.closed !== undefined ? { closed: patch.closed } : null;
     case 'color':
@@ -352,9 +385,30 @@ function applicableValuePatch(
         ? { capacitance: patch.capacitance }
         : null;
     case 'none':
-      // у диода нет правимого номинала — правка отклоняется целиком
+      // у диода и транзистора нет правимого номинала — правка отклоняется целиком
       return null;
   }
+}
+
+/** Правка потенциометра: сопротивление и/или положение движка. */
+function potentiometerPatch(patch: ComponentValuePatch): ComponentValuePatch | null {
+  const resistance =
+    patch.resistance !== undefined
+      ? isPositiveNumber(patch.resistance)
+        ? { resistance: patch.resistance }
+        : null
+      : {};
+  const wiper =
+    patch.wiper !== undefined ? (isWiperValue(patch.wiper) ? { wiper: patch.wiper } : null) : {};
+  if (resistance === null || wiper === null) return null;
+  return Object.keys(resistance).length + Object.keys(wiper).length > 0
+    ? { ...resistance, ...wiper }
+    : null;
+}
+
+/** Положение движка: доля от 0 (у вывода 0) до 1 (у вывода 2). */
+export function isWiperValue(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 function isPositiveNumber(value: number): boolean {
