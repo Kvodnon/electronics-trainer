@@ -4,6 +4,8 @@
  */
 import type { QuantityUnit } from './quantity';
 import type { ComponentKind } from './canvas';
+import type { Bit } from './booleanEngine';
+import type { DigitalKind } from './digitalCanvas';
 
 /** Идентификатор Варианта ответа. Уникален внутри одного Вопроса. */
 export type ChoiceId = string;
@@ -170,5 +172,39 @@ export interface CircuitTask {
   readonly hints?: TaskHints;
 }
 
+/**
+ * Строка требуемой таблицы истинности: набор входов и ожидаемые уровни
+ * выходов. Биты стоят в порядке Кнопок-входов и Индикаторов-выходов.
+ */
+export interface LogicTableRow {
+  readonly inputs: readonly Bit[];
+  readonly outputs: readonly Bit[];
+}
+
+/**
+ * Цифровое Схема-задание: ученик собирает логику из Компонентов цифрового
+ * Холста; проверка прогоняет схему по всем строкам требуемой таблицы
+ * истинности (ADR-0002), поэтому эквивалентные схемы проходят одинаково.
+ * Входы — Кнопки в порядке установки, выходы — Индикаторы; проверка
+ * требует их ровно по числу в Задании.
+ */
+export interface LogicTask {
+  readonly kind: 'logic-task';
+  readonly id: string;
+  readonly prompt: string;
+  /** Палитра Задания: цифровые Компоненты, доступные ученику. */
+  readonly palette: readonly DigitalKind[];
+  /** Число входов (Кнопок) и выходов (Индикаторов). */
+  readonly inputs: number;
+  readonly outputs: number;
+  /**
+   * Требуемая таблица истинности. У комбинационной схемы строки перебирают
+   * все наборы входов; у триггера набор может повторяться — «держит»
+   * проверяется от состояния предыдущей строки, поэтому порядок строк значим.
+   */
+  readonly truthTable: readonly LogicTableRow[];
+  readonly hints?: TaskHints;
+}
+
 /** Задание — единица работы ученика; виды добавляются по мере Модулей. */
-export type Task = ChoiceQuestion | NumericQuestion | CircuitTask;
+export type Task = ChoiceQuestion | NumericQuestion | CircuitTask | LogicTask;

@@ -20,6 +20,9 @@ import {
 // Прогресс восстанавливается из localStorage. Скачивание файла перехватывает
 // заглушка из src/testing — содержимое при этом настоящий Blob.
 
+/** Ближайший заблокированный Модуль: с М3 в Курсе их несколько, тесты проверяют М2. */
+const firstLockedButton = () => screen.getAllByRole('button', { name: 'Заблокирован' })[0];
+
 /** Сеет Прогресс М1: все Задания пройдены, кроме перечисленных в except. */
 function seedModule1Progress(except: readonly string[] = []): void {
   const taskStates = Object.fromEntries(
@@ -86,9 +89,10 @@ describe('Экран Курса', () => {
     expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
-    const lockedButton = screen.getByRole('button', { name: 'Заблокирован' });
+    const lockedButton = firstLockedButton();
     expect(lockedButton).toBeDisabled();
-    expect(screen.getByText('Откроется после Модуля «Основы DC»')).toBeInTheDocument();
+    // оба Модуля после непройденной М1 держит она же — ближайшая незакрытая
+    expect(screen.getAllByText('Откроется после Модуля «Основы DC»')).toHaveLength(2);
   });
 });
 
@@ -133,7 +137,7 @@ describe('Прогресс между сессиями', () => {
     render(<App />);
 
     expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+    expect(firstLockedButton()).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Продолжить' }));
     await passTheory(user, 4);
@@ -223,7 +227,7 @@ describe('Экзамен Модуля', () => {
 
     await user.click(screen.getByRole('button', { name: '← К Модулям' }));
     expect(screen.getByText('Заданий пройдено: 21 из 22')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+    expect(firstLockedButton()).toBeDisabled();
   });
 
   it('неудачная проверка Экзамена портит «первую попытку», сдача завершает Модуль и открывает следующий', async () => {
@@ -458,7 +462,7 @@ describe('Песочница', () => {
 
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+    expect(firstLockedButton()).toBeDisabled();
   });
 });
 
@@ -537,7 +541,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
 
     expect(screen.getByText('Заданий пройдено: 1 из 22')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Продолжить' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+    expect(firstLockedButton()).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
     expect(screen.getByText('Кольцо')).toBeInTheDocument();
@@ -588,7 +592,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
     expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
+    expect(firstLockedButton()).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Открыть' }));
     expect(screen.getByText('Кольцо')).toBeInTheDocument();

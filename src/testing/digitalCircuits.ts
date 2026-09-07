@@ -1,0 +1,170 @@
+import {
+  digitalCanvasReducer,
+  emptyDigitalHistory,
+  type DigitalCanvasHistory,
+  type DigitalCanvasState,
+  type DigitalKind,
+} from '../domain/digitalCanvas';
+import type { PinRef } from '../domain/canvas';
+
+/**
+ * Эталон-сборки цифровых схем для тестов: редьюсером Холста, тем же, что
+ * собирает схему ученик, поэтому одиночный водитель каждой сети гарантирован.
+ * Эталон — не про проверку ученика (ADR-0001), а про доказательство
+ * решаемости Заданий и эквивалентности разных топологий.
+ */
+
+/** История с поставленными в ряд Компонентами: c1, c2, … */
+export function placeDigital(kinds: readonly DigitalKind[]): DigitalCanvasHistory {
+  let history = emptyDigitalHistory;
+  kinds.forEach((kind, index) => {
+    history = digitalCanvasReducer(history, {
+      type: 'component-placed',
+      kind,
+      x: 100 + index * 160,
+      y: 100,
+    });
+  });
+  return history;
+}
+
+/** Соединяет выводы Проводом через редьюсер: недопустимое соединение он отклонит. */
+export function wireDigital(history: DigitalCanvasHistory, from: PinRef, to: PinRef): DigitalCanvasHistory {
+  return digitalCanvasReducer(history, { type: 'wire-drawn', from, to });
+}
+
+const pin = (componentId: string, pin: number): PinRef => ({ componentId, pin });
+
+/** Схема из поставленных в ряд Компонентов с Проводами; идентификаторы — c1, c2, … по порядку. */
+export function digitalAssembly(
+  kinds: readonly DigitalKind[],
+  wires: readonly (readonly [from: PinRef, to: PinRef])[],
+): DigitalCanvasState {
+  let history = placeDigital(kinds);
+  for (const [from, to] of wires) history = wireDigital(history, from, to);
+  return history.present;
+}
+
+/**
+ * XOR суммой произведений: a·¬b + ¬a·b. Кнопки c1 (a) и c2 (b) — входы
+ * в порядке установки, Индикатор c8 — выход.
+ */
+export function xorFromSumOfProducts(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'not', 'not', 'and', 'and', 'or', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c2', 0), pin('c4', 0)],
+      [pin('c1', 0), pin('c5', 0)],
+      [pin('c4', 1), pin('c5', 1)],
+      [pin('c2', 0), pin('c6', 0)],
+      [pin('c3', 1), pin('c6', 1)],
+      [pin('c5', 2), pin('c7', 0)],
+      [pin('c6', 2), pin('c7', 1)],
+      [pin('c7', 2), pin('c8', 0)],
+    ],
+  );
+}
+
+/** Эквивалентный XOR другой топологии: ¬(a·b)·(a+b) — та же таблица, другая схема. */
+export function xorFromProductOfSums(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'and', 'not', 'or', 'and', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c2', 0), pin('c3', 1)],
+      [pin('c3', 2), pin('c4', 0)],
+      [pin('c1', 0), pin('c5', 0)],
+      [pin('c2', 0), pin('c5', 1)],
+      [pin('c4', 1), pin('c6', 0)],
+      [pin('c5', 2), pin('c6', 1)],
+      [pin('c6', 2), pin('c7', 0)],
+    ],
+  );
+}
+
+/**
+ * Полусумматор: сумма a⊕b и перенос a·b на двух Индикаторах — c9 (сумма),
+ * c10 (перенос).
+ */
+export function halfAdderFromGates(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'not', 'not', 'and', 'and', 'or', 'and', 'indicator', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c2', 0), pin('c4', 0)],
+      [pin('c1', 0), pin('c5', 0)],
+      [pin('c4', 1), pin('c5', 1)],
+      [pin('c2', 0), pin('c6', 0)],
+      [pin('c3', 1), pin('c6', 1)],
+      [pin('c5', 2), pin('c7', 0)],
+      [pin('c6', 2), pin('c7', 1)],
+      [pin('c1', 0), pin('c8', 0)],
+      [pin('c2', 0), pin('c8', 1)],
+      [pin('c7', 2), pin('c9', 0)],
+      [pin('c8', 2), pin('c10', 0)],
+    ],
+  );
+}
+
+/**
+ * RS-триггер из двух ИЛИ-НЕ: каждый ИЛИ-НЕ собран из ИЛИ и НЕ, перекрёстные
+ * связи замыкают выход одного на вход другого. Входы c1 (R) и c2 (S),
+ * выходы c7 (Q) и c8 (НЕ-Q).
+ */
+export function rsLatchFromNorCompositions(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'or', 'not', 'or', 'not', 'indicator', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c6', 1), pin('c3', 1)],
+      [pin('c3', 2), pin('c4', 0)],
+      [pin('c2', 0), pin('c5', 0)],
+      [pin('c4', 1), pin('c5', 1)],
+      [pin('c5', 2), pin('c6', 0)],
+      [pin('c4', 1), pin('c7', 0)],
+      [pin('c6', 1), pin('c8', 0)],
+    ],
+  );
+}
+
+/** Ловушка: та же пара кнопок, но на выходе элемент И — таблица XOR не сходится. */
+export function andGateTrap(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'and', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c2', 0), pin('c3', 1)],
+      [pin('c3', 2), pin('c4', 0)],
+    ],
+  );
+}
+
+/** Пара ИЛИ-НЕ без перекрёстных связей: таблицу установки проходит, память не доказывает. */
+export function openLoopNorPair(): DigitalCanvasState {
+  return digitalAssembly(
+    ['button', 'button', 'or', 'not', 'or', 'not', 'indicator', 'indicator'],
+    [
+      [pin('c1', 0), pin('c3', 0)],
+      [pin('c3', 2), pin('c4', 0)],
+      [pin('c2', 0), pin('c5', 0)],
+      [pin('c5', 2), pin('c6', 0)],
+      [pin('c4', 1), pin('c7', 0)],
+      [pin('c6', 1), pin('c8', 0)],
+    ],
+  );
+}
+
+/** Кнопка в заданном состоянии: состояния входов на строках таблицы назначает проверка. */
+export function withButtonLevel(
+  canvas: DigitalCanvasState,
+  componentId: string,
+  high: boolean,
+): DigitalCanvasState {
+  return {
+    components: canvas.components.map((component) =>
+      component.id === componentId ? { ...component, high } : component,
+    ),
+    wires: canvas.wires,
+  };
+}

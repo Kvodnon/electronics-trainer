@@ -43,6 +43,8 @@ interface DigitalCanvasEditorProps {
   readonly symbolStandard: SymbolStandard;
   /** Живые уровни всех выводов от булевого движка, словарь по pinKey. */
   readonly levels: ReadonlyMap<string, Bit>;
+  /** Компонент с ошибкой из Диагноза: подсвечивается до следующей проверки. */
+  readonly faultComponentId?: string | null;
   /** Кнопки экрана в панели редактора — «Демо-схема», стандарт обозначений. */
   readonly actions?: ReactNode;
 }
@@ -53,6 +55,7 @@ export function DigitalCanvasEditor({
   onAction,
   symbolStandard,
   levels,
+  faultComponentId = null,
   actions,
 }: DigitalCanvasEditorProps) {
   const canvas = history.present;
@@ -256,12 +259,15 @@ export function DigitalCanvasEditor({
         {components.map((component) => {
           const shown = withDrag(component);
           const selected = selection?.kind === 'component' && selection.id === component.id;
+          const fault = component.id === faultComponentId;
           return (
             <g
               key={component.id}
               className={`canvas-component ${selected ? 'canvas-component-selected' : ''} ${
                 drag !== null && drag.componentId === component.id ? 'canvas-component-dragged' : ''
-              } ${component.kind === 'button' ? 'digital-component-toggle' : ''}`}
+              } ${component.kind === 'button' ? 'digital-component-toggle' : ''} ${
+                fault ? 'canvas-component-fault' : ''
+              }`}
               role="button"
               aria-label={componentName(component.id)}
               aria-pressed={component.kind === 'button' ? (component.high ?? false) : undefined}
@@ -269,6 +275,7 @@ export function DigitalCanvasEditor({
               onMouseDown={(event) => beginDrag(component, event)}
             >
               <circle className="canvas-component-hit" r={COMPONENT_HIT_RADIUS} />
+              {fault && <circle className="fault-ring" r={COMPONENT_HIT_RADIUS + 12} aria-hidden="true" />}
               <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <DigitalSymbolBody
                   component={component}

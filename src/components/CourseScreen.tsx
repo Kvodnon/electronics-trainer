@@ -49,7 +49,7 @@ export function CourseScreen({
       <section className="panel sandbox-entry" aria-labelledby="digital-entry-heading">
         <div className="sandbox-entry-text">
           <h3 id="digital-entry-heading" className="module-title">
-            Цифровая логика
+            Цифровой Холст
           </h3>
           <p className="module-summary">
             Отдельный Холст со строгими сигналами 0/1: элементы И, ИЛИ и НЕ, Кнопка,

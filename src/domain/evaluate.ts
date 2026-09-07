@@ -2,9 +2,11 @@
  * Проверка Ответа — главный шов домена: `evaluate(Задание, ответ) → вердикт`.
  * Вердикт содержит всё, что нужно UI: исход и Разбор (или решение).
  */
-import type { ChoiceId, ChoiceQuestion, CircuitTask, NumericQuestion, Task } from './task';
+import type { ChoiceId, ChoiceQuestion, CircuitTask, LogicTask, NumericQuestion, Task } from './task';
 import type { CanvasState } from './canvas';
+import type { DigitalCanvasState } from './digitalCanvas';
 import { checkConditions, type ConditionCheck } from './circuitConditions';
+import { checkLogicTable, type LogicRowCheck, type LogicDiagnosis } from './logicCheck';
 import { diagnoseCircuit, type CircuitDiagnosis } from './circuitDiagnoses';
 import { solveDc, type DcSolution } from './simulator';
 import { solveTransient, toggledContactStates, type TransientSolution } from './transient';
@@ -27,8 +29,14 @@ export interface CircuitAnswer {
   readonly canvas: CanvasState;
 }
 
+/** Ответ ученика на цифровое Схема-задание: собранная на цифровом Холсте логика. */
+export interface LogicAnswer {
+  readonly kind: 'logic-answer';
+  readonly canvas: DigitalCanvasState;
+}
+
 /** Ответ ученика на Задание. */
-export type Answer = ChoiceAnswer | NumericAnswer | CircuitAnswer;
+export type Answer = ChoiceAnswer | NumericAnswer | CircuitAnswer | LogicAnswer;
 
 /** Разбор одного варианта в контексте проверки. */
 export interface ChoiceReview {
@@ -88,19 +96,35 @@ export interface CircuitTaskEvaluation {
   readonly transient?: TransientSolution;
 }
 
+/**
+ * Вердикт проверки цифрового Схема-задания (ADR-0002): сверка по каждой строке
+ * таблицы истинности и Диагноз первой расходившейся строки с местом ошибки.
+ * Эквивалентные топологии дают одинаковый исход — сравнивается таблица,
+ * а не схема.
+ */
+export interface LogicTaskEvaluation {
+  readonly kind: 'logic-task';
+  readonly outcome: 'correct' | 'incorrect';
+  readonly rowChecks: readonly LogicRowCheck[];
+  /** Пуст для «пройдено»; у структурной ошибки таблица не проверялась вовсе. */
+  readonly diagnoses: readonly LogicDiagnosis[];
+}
+
 /** Вердикт проверки Задания. */
-export type Evaluation = ChoiceQuestionEvaluation | NumericQuestionEvaluation | CircuitTaskEvaluation;
+export type Evaluation = ChoiceQuestionEvaluation | NumericQuestionEvaluation | CircuitTaskEvaluation | LogicTaskEvaluation;
 
 /**
  * Вердикт указанного вида или null. Вызывающий знает вид Задания, а TypeScript
  * не выводит вид вердикта из вида Задания — это единое место сужения типа.
+ * Extract сверяет по дискриминанту-объекту: с буквальным K он выродился бы
+ * в never, ведь вердикт-интерфейс не наследует строку.
  */
 export function evaluationOfKind<K extends Evaluation['kind']>(
   evaluation: Evaluation | null,
   kind: K,
-): Extract<Evaluation, K> | null {
+): Extract<Evaluation, { kind: K }> | null {
   return evaluation !== null && evaluation.kind === kind
-    ? (evaluation as Extract<Evaluation, K>)
+    ? (evaluation as Extract<Evaluation, { kind: K }>)
     : null;
 }
 
@@ -116,6 +140,9 @@ export function evaluate(task: Task, answer: Answer): Evaluation {
   }
   if (task.kind === 'circuit-task' && answer.kind === 'circuit-answer') {
     return evaluateCircuit(task, answer);
+  }
+  if (task.kind === 'logic-task' && answer.kind === 'logic-answer') {
+    return evaluateLogic(task, answer);
   }
   throw new Error(`Ответ вида «${answer.kind}» не подходит Заданию вида «${task.kind}»`);
 }
@@ -192,5 +219,20 @@ function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskE
     diagnoses,
     solution,
     transient,
+  };
+}
+
+/**
+ * Проверка цифрового Схема-задания: движок прогоняет схему по всем строкам
+ * таблицы истинности, Диагноз называет расходившийся набор входов и место
+ * ошибки. Состояние схемы между строками переносит сама проверка.
+ */
+function evaluateLogic(task: LogicTask, answer: LogicAnswer): LogicTaskEvaluation {
+  const result = checkLogicTable(answer.canvas, task);
+  return {
+    kind: 'logic-task',
+    outcome: result.passed ? 'correct' : 'incorrect',
+    rowChecks: result.rowChecks,
+    diagnoses: result.diagnoses,
   };
 }

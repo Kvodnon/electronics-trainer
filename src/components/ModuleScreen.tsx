@@ -4,6 +4,7 @@ import { ModuleProgressLine, taskStateName } from './ModuleProgressLine';
 import { NumericQuestionScreen } from './NumericQuestionScreen';
 import { QuestionScreen } from './QuestionScreen';
 import { CircuitTaskScreen } from './canvas/CircuitTaskScreen';
+import { LogicTaskScreen } from './digital/LogicTaskScreen';
 import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import {
   isExamTask,
@@ -69,7 +70,7 @@ export function ModuleScreen({
     // сорвана), очередь не меняется. Вопросы уходят по «Дальше» — там
     // общее правило возвращения на повтор.
     if (
-      currentTask.kind === 'circuit-task' &&
+      (currentTask.kind === 'circuit-task' || currentTask.kind === 'logic-task') &&
       evaluate(currentTask, answer).outcome !== 'correct'
     ) {
       onProgressAction({ type: 'attempt-failed', taskId: currentTask.id });
@@ -141,6 +142,16 @@ export function ModuleScreen({
             evaluation={evaluationOfKind(evaluation, 'numeric-question')}
             onAnswer={handleAnswer}
             onNext={goNext}
+          />
+        ) : currentTask.kind === 'logic-task' ? (
+          <LogicTaskScreen
+            key={`${currentTask.id}:${step}`}
+            task={currentTask}
+            evaluation={evaluationOfKind(evaluation, 'logic-task')}
+            onAnswer={handleAnswer}
+            onNext={goNext}
+            symbolStandard={symbolStandard}
+            onSymbolStandardChange={onSymbolStandardChange}
           />
         ) : (
           <CircuitTaskScreen

@@ -2,20 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { course } from './course';
 import { module1, module1Palette } from './m1';
 import { module2, module2Palette } from './m2';
+import { module3 } from './m3';
 import { isComponentKind, type CanvasState, type ComponentKind, type PlacedComponent, type Wire } from '../domain/canvas';
 import { defaultValuesOf } from '../domain/canvas';
+import { isDigitalKind, type DigitalCanvasState } from '../domain/digitalCanvas';
 import type { CourseModule } from '../domain/course';
 import type {
   ChoiceQuestion,
   CircuitCondition,
   CircuitTask,
+  LogicTask,
   NumericQuestion,
   Task,
 } from '../domain/task';
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
-import { evaluate } from '../domain/evaluate';
+import { evaluate, evaluationOfKind } from '../domain/evaluate';
 import { emptyProgress, examOf, modulePaletteOf, progressReducer, sandboxPaletteOf } from '../domain/course';
+import {
+  andGateTrap,
+  halfAdderFromGates,
+  openLoopNorPair,
+  rsLatchFromNorCompositions,
+  xorFromProductOfSums,
+  xorFromSumOfProducts,
+} from '../testing/digitalCircuits';
 
 /**
  * Контент-линтер (тикет 12): структурные гарантии всего Курса. Каждый Вопрос —
@@ -47,6 +58,10 @@ function questionsOf(module: CourseModule): Task[] {
 
 function circuitTasksOf(module: CourseModule): CircuitTask[] {
   return module.tasks.filter((task): task is CircuitTask => task.kind === 'circuit-task');
+}
+
+function logicTasksOf(module: CourseModule): LogicTask[] {
+  return module.tasks.filter((task): task is LogicTask => task.kind === 'logic-task');
 }
 
 function isMeasurement(condition: CircuitCondition): boolean {
@@ -729,5 +744,130 @@ describe('Палитра М2 привязана к Прогрессу (тике�
     expect(modulePalette).toContain('transistor');
     expect(modulePalette).toContain('potentiometer');
     expect(modulePalette).toContain('buzzer');
+  });
+});
+
+describe('Линтер: цифровые Схема-задания (тикет 18)', () => {
+  it('Палитра непуста и состоит из цифровых Компонентов', () => {
+    for (const module of course.modules) {
+      for (const task of logicTasksOf(module)) {
+        expect(task.palette.length, `Задание ${task.id}: пустая Палитра`).toBeGreaterThan(0);
+        for (const kind of task.palette) {
+          expect(isDigitalKind(kind), `Задание ${task.id}: нецифровой вид «${kind}»`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('число входов и выходов здравое; строки таблицы согласованы с ним', () => {
+    for (const module of course.modules) {
+      for (const task of logicTasksOf(module)) {
+        const where = `Задание ${task.id}`;
+        expect(task.inputs, `${where}: нет входов`).toBeGreaterThanOrEqual(1);
+        expect(task.outputs, `${where}: нет выходов`).toBeGreaterThanOrEqual(1);
+        expect(task.truthTable.length, `${where}: пустая таблица истинности`).toBeGreaterThan(0);
+        for (const row of task.truthTable) {
+          expect(row.inputs, `${where}: в строке не то число входов`).toHaveLength(task.inputs);
+          expect(row.outputs, `${where}: в строке не то число выходов`).toHaveLength(task.outputs);
+        }
+      }
+    }
+  });
+
+  it('комбинационные Задания перебирают все наборы входов: наборы строк уникальны и покрывают все 2^N', () => {
+    for (const module of course.modules) {
+      for (const task of logicTasksOf(module)) {
+        const sets = task.truthTable.map((row) => row.inputs.join(''));
+        // повторяющийся набор — признак триггера: «держит» осмысленно только
+        // от предыдущей строки, покрытие 2^N там не требуется
+        if (new Set(sets).size !== sets.length) continue;
+        expect(
+          sets.length,
+          `Задание ${task.id}: таблица не перебирает все наборы входов`,
+        ).toBe(2 ** task.inputs);
+      }
+    }
+  });
+
+  it('у триггера повторяющийся набор не начинается с первой строки: «держать» с чистого листа нечего', () => {
+    for (const module of course.modules) {
+      for (const task of logicTasksOf(module)) {
+        const sets = task.truthTable.map((row) => row.inputs.join(''));
+        expect(
+          sets.indexOf(sets[0], 1),
+          `Задание ${task.id}: первая строка повторяется — состояние неоткуда переносить`,
+        ).toBe(-1);
+      }
+    }
+  });
+});
+
+describe('Объём контента М3 (тикет 18)', () => {
+  it('три Схема-задания по таблице истинности: XOR, полусумматор, RS-триггер', () => {
+    expect(logicTasksOf(module3).map((task) => task.id)).toEqual([
+      'm3-xor',
+      'm3-half-adder',
+      'm3-rs-latch',
+    ]);
+  });
+
+  it('Модуль М3 не добавляет аналоговых Компонентов в Песочницу', () => {
+    expect(modulePaletteOf(module3)).toEqual([]);
+  });
+});
+
+describe('Схема-задания М3 решаемы: эталон-сборки проходят таблицу истинности (тикет 18)', () => {
+  function logicTaskOf(id: string): LogicTask {
+    const task = module3.tasks.find(
+      (candidate): candidate is LogicTask => candidate.kind === 'logic-task' && candidate.id === id,
+    );
+    if (!task) throw new Error(`фикстура: нет цифрового Схема-задания «${id}»`);
+    return task;
+  }
+
+  /** Вердикт Задания на эталон-сборке через главный шов evaluate, как ответ ученика. */
+  function verdictOf(task: LogicTask, canvas: DigitalCanvasState) {
+    const verdict = evaluationOfKind(evaluate(task, { kind: 'logic-answer', canvas }), 'logic-task');
+    if (verdict === null) throw new Error('фикстура: ожидался вердикт цифрового Схема-задания');
+    return verdict;
+  }
+
+  /** Эталон-сборка проходит Задание. */
+  function assertSolvable(task: LogicTask, canvas: DigitalCanvasState): void {
+    expect(
+      verdictOf(task, canvas).outcome,
+      `Задание ${task.id} должно решаться эталон-сборкой`,
+    ).toBe('correct');
+  }
+
+  it('XOR: сумма произведений проходит все наборы входов', () => {
+    assertSolvable(logicTaskOf('m3-xor'), xorFromSumOfProducts());
+  });
+
+  it('XOR: эквивалентная топология (произведение сумм) тоже проходит — сверяется таблица, не схема', () => {
+    assertSolvable(logicTaskOf('m3-xor'), xorFromProductOfSums());
+  });
+
+  it('XOR: элемент И на выходе ловится — Диагноз называет расходившийся набор входов', () => {
+    const verdict = verdictOf(logicTaskOf('m3-xor'), andGateTrap());
+    expect(verdict.outcome).toBe('incorrect');
+    expect(verdict.diagnoses[0]?.text).toMatch(/Вход 1 = 0, Вход 2 = 1/);
+    expect(verdict.diagnoses[0]?.spot).toBe('c3');
+  });
+
+  it('полусумматор: сумма и перенос на двух Индикаторах проходят', () => {
+    assertSolvable(logicTaskOf('m3-half-adder'), halfAdderFromGates());
+  });
+
+  it('RS-триггер: перекрёстные ИЛИ-НЕ держат оба состояния — повторные строки проходят по порядку', () => {
+    assertSolvable(logicTaskOf('m3-rs-latch'), rsLatchFromNorCompositions());
+  });
+
+  it('RS-триггер: пара ИЛИ-НЕ без перекрёстных связей не проходит — память не доказана', () => {
+    const verdict = verdictOf(logicTaskOf('m3-rs-latch'), openLoopNorPair());
+    expect(verdict.outcome).toBe('incorrect');
+    // установку открытая пара ещё проходит, «держит 1» — уже нет
+    expect(verdict.rowChecks[0]?.passed).toBe(true);
+    expect(verdict.rowChecks[1]?.passed).toBe(false);
   });
 });

@@ -1167,6 +1167,40 @@ body {
   color: var(--incorrect);
 }
 
+/* Таблица истинности в вердикте цифрового Схема-задания: расходившиеся
+   строки читаются взглядом, биты — моноширинные. */
+.logic-table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-family: var(--monospace);
+  font-size: 13px;
+}
+
+.logic-table th,
+.logic-table td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: center;
+}
+
+.logic-table thead th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.logic-row-failed td {
+  color: var(--incorrect);
+}
+
+.logic-row-passed .logic-row-mark {
+  color: var(--correct);
+}
+
+.logic-row-failed .logic-row-mark {
+  color: var(--incorrect);
+}
+
 /* «Работает, но не по условию» — тревожный янтарь между «пройдено» и «ошибка» */
 
 .verdict-works-not-per-task {

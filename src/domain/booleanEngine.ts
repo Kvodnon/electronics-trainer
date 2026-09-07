@@ -61,10 +61,17 @@ const MAX_SETTLE_STEPS = 64;
  * Некорректная схема с двумя выходами в одной сети (минуя редьюсер,
  * например из загруженного файла) остаётся определённой: побеждает
  * выход последнего по порядку Компонента.
+ *
+ * `initial` — уровни выводов с прошлого прогона той же схемы: проверка
+ * таблицы истинности триггера переносит состояние от строки к строке,
+ * иначе «держит» не отличимо от чистого листа. Сети источников
+ * перезаряжаются заново в любом случае — состояния Кнопок между строками
+ * меняет сама проверка.
  */
 export function evaluateDigital(
   canvas: DigitalCanvasState,
   now: number,
+  initial?: ReadonlyMap<string, Bit>,
 ): ReadonlyMap<string, Bit> {
   const componentById = new Map(canvas.components.map((c) => [c.id, c]));
   const keyOf = (ref: PinRef): string => pinKey(ref.componentId, ref.pin);
@@ -91,13 +98,15 @@ export function evaluateDigital(
     nets.union(keyOf(wire.from), keyOf(wire.to));
   }
 
-  // Начальные уровни: источник водит свою сеть; сеть без источника — 0.
+  // Начальные уровни: источник водит свою сеть; сеть без источника — 0 или
+  // уровень с прошлого прогона.
   const levels = new Map<string, Bit>();
   for (const component of canvas.components) {
     for (let pin = 0; pin < digitalPinCountOf(component.kind); pin += 1) {
-      const root = nets.find(pinKey(component.id, pin));
+      const key = pinKey(component.id, pin);
+      const root = nets.find(key);
       if (levels.has(root)) continue;
-      levels.set(root, 0);
+      levels.set(root, initial?.get(key) ?? 0);
     }
   }
   for (const component of canvas.components) {

@@ -8,6 +8,7 @@ import {
   type DigitalKind,
 } from './digitalCanvas';
 import type { PinRef } from './canvas';
+import { rsLatchFromNorCompositions, withButtonLevel } from '../testing/digitalCircuits';
 
 /**
  * Булевый движок — главный шов М3 (см. spec: Testing Decisions): тесты идут
@@ -208,5 +209,26 @@ describe('Демо-схема живёт', () => {
     const pressedLevels = evaluateDigital(pressed, 0.1);
     expect(pressedLevels.get('c5:0')).toBe(1);
     expect(pressedLevels.get('c6:0')).toBe(0);
+  });
+});
+
+describe('Перенос состояния: initial уровни с прошлого прогона', () => {
+  it('Триггер держит сброшенное состояние при нулях входов; с чистого листа тот же ноль даёт другое', () => {
+    const canvas = rsLatchFromNorCompositions();
+
+    // сброс: R = 1 → Q = 0
+    const reset = evaluateDigital(withButtonLevel(canvas, 'c1', true), 0);
+    expect(reset.get('c7:0')).toBe(0);
+    expect(reset.get('c8:0')).toBe(1);
+
+    // оба входа в нуле от сброшенного состояния: триггер держит Q = 0
+    const hold = evaluateDigital(canvas, 0, reset);
+    expect(hold.get('c7:0')).toBe(0);
+    expect(hold.get('c8:0')).toBe(1);
+
+    // с чистого листа та же схема на тех же нулях приходит к Q = 1:
+    // без переноса «держит» не отличить от чистого листа
+    const clean = evaluateDigital(canvas, 0);
+    expect(clean.get('c7:0')).toBe(1);
   });
 });
