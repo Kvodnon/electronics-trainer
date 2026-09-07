@@ -18,7 +18,6 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(screen.getByText('Неверно')).toBeInTheDocument();
     expect(screen.getByText('Правильный ответ: Ток удвоится')).toBeInTheDocument();
 
-    // Разбор к каждому варианту, не только к выбранному
     const reviewsSection = screen.getByRole('region', { name: 'Разборы' });
     const reviews = within(reviewsSection).getAllByRole('listitem');
     expect(reviews).toHaveLength(4);
@@ -56,14 +55,12 @@ describe('Вопрос с выбором варианта: поток от от�
     expect(screen.getByText('Верно')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
-    // Второе Задание Модуля — числовой Вопрос
     expect(screen.getByText('Вопрос с числовым ответом')).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
     await user.click(screen.getByRole('button', { name: 'Ответить' }));
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    // Очередь продолжается третьим Вопросом Модуля
     expect(screen.getByText(/4,7 кОм/)).toBeInTheDocument();
   });
 });

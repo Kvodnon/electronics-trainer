@@ -108,7 +108,6 @@ describe('measure и probePoints: шов экрана', () => {
   it('в режиме тока та же лестница состояний по ветви', () => {
     const solution = solveDc(switchedLoop(true));
     expect(measure(solution, 'current', emptyProbes)).toEqual({ status: 'idle' });
-    // Компонент с щупом удалён со схемы: решение есть, ветви нет
     expect(measure(solution, 'current', { ...emptyProbes, branch: 'нет' })).toEqual({
       status: 'unavailable',
     });

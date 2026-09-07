@@ -14,9 +14,7 @@ export type ChoiceId = string;
  * не выдаётся ни на какой ступени (это договорённость о контенте).
  */
 export interface TaskHints {
-  /** Ступень 1: наводящий вопрос, подталкивающий к нужной мысли. */
   readonly question: string;
-  /** Ступень 2: почти решение — путь к ответу без самого ответа. */
   readonly almostSolution: string;
 }
 
@@ -41,7 +39,6 @@ export interface ChoiceQuestion {
   readonly prompt: string;
   readonly choices: readonly Choice[];
   readonly correctChoiceId: ChoiceId;
-  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
   readonly hints?: TaskHints;
 }
 
@@ -61,7 +58,6 @@ export interface NumericQuestion {
   readonly tolerance?: number;
   readonly razbor: string;
   readonly solutionSteps: readonly string[];
-  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
   readonly hints?: TaskHints;
 }
 
@@ -171,7 +167,6 @@ export interface CircuitTask {
    * пока не пройдены все остальные Задания Модуля (правило живёт в домене Курса).
    */
   readonly isExam?: boolean;
-  /** Лестница Подсказок; без неё Задание показывается без ступени помощи. */
   readonly hints?: TaskHints;
 }
 

@@ -46,7 +46,6 @@ export function isValidCircuitName(name: string): boolean {
   return name.trim() !== '';
 }
 
-/** Следующий свободный идентификатор: s1, s2… по максимуму существующих. */
 function nextCircuitId(circuits: readonly SavedCircuit[]): string {
   let max = 0;
   for (const circuit of circuits) {

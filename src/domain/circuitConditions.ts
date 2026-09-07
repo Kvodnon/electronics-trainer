@@ -69,7 +69,6 @@ export function checkConditions(
 
 /** Какое показание Компонента сверяется с диапазоном и как оно называется в Разборе. */
 interface MeasurementTraits {
-  /** Поле показания Компонента. */
   readonly field: 'current' | 'voltage' | 'power';
   /** Единица величины для записи с приставкой. */
   readonly unit: QuantityUnit;

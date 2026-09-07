@@ -98,7 +98,6 @@ export function pinPointOf(component: PlacedComponent, pin: number): DirectedPoi
   return { x: component.x + rotated.x, y: component.y + rotated.y, dx: rotated.dx, dy: rotated.dy };
 }
 
-/** Длина выходного сегмента Провода из-под вывода. */
 const WIRE_STUB = 20;
 
 /**
@@ -139,7 +138,6 @@ function cornerBetween(stubFrom: Point, from: DirectedPoint, stubTo: Point): Poi
     : { x: stubFrom.x, y: stubTo.y };
 }
 
-/** Убирает повторяющиеся точки и сливает соседние коллинеарные сегменты. */
 function tidy(route: readonly Point[]): Point[] {
   const clean: Point[] = [];
   for (const point of route) {

@@ -42,8 +42,6 @@ body {
   padding: 32px 20px 64px;
 }
 
-/* Шапка */
-
 .app-header {
   margin-bottom: 28px;
   padding-bottom: 16px;
@@ -75,16 +73,12 @@ body {
   font-size: 13px;
 }
 
-/* Панели */
-
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 24px;
 }
-
-/* Вопрос */
 
 .question-kind {
   margin: 0 0 8px;
@@ -162,8 +156,6 @@ body {
   opacity: 0.55;
 }
 
-/* Чипы-пометки */
-
 .chip {
   font-family: var(--monospace);
   font-size: 11px;
@@ -190,8 +182,6 @@ body {
   color: var(--accent);
   border-color: var(--accent-dim);
 }
-
-/* Вердикт */
 
 .verdict {
   margin: 0 0 20px;
@@ -234,8 +224,6 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
-
-/* Числовой ввод */
 
 .numeric-form {
   display: flex;
@@ -291,8 +279,6 @@ body {
   font-size: 14px;
 }
 
-/* Пошаговое решение */
-
 .solution-steps {
   list-style: none;
   counter-reset: step;
@@ -321,8 +307,6 @@ body {
   font-family: var(--monospace);
   color: var(--accent);
 }
-
-/* Разборы */
 
 .reviews h3,
 .review-single h3,
@@ -378,8 +362,6 @@ body {
   font-size: 15px;
 }
 
-/* Лестница Подсказок: ступени помощи, не выдающие готовый ответ */
-
 .hints {
   margin: 0 0 16px;
   display: flex;
@@ -411,8 +393,6 @@ body {
   letter-spacing: 0.12em;
 }
 
-/* Кнопки */
-
 .button-primary {
   padding: 10px 28px;
   border-radius: 8px;
@@ -436,8 +416,6 @@ body {
   outline-offset: 2px;
 }
 
-/* Финальный экран */
-
 .done h2 {
   margin: 0 0 8px;
 }
@@ -447,8 +425,6 @@ body {
   color: var(--text-muted);
   line-height: 1.55;
 }
-
-/* Экран Курса */
 
 .course h2 {
   margin: 0 0 4px;
@@ -537,8 +513,6 @@ body {
   cursor: not-allowed;
 }
 
-/* Вход в Песочницу на экране Курса */
-
 .sandbox-entry {
   display: flex;
   align-items: center;
@@ -563,8 +537,6 @@ body {
 .sandbox-entry .button-primary {
   flex-shrink: 0;
 }
-
-/* Песочница */
 
 .sandbox-intro {
   margin: 0 0 16px;
@@ -660,8 +632,6 @@ body {
   flex-shrink: 0;
 }
 
-/* Экран Модуля */
-
 .module-header {
   margin-bottom: 20px;
   padding-bottom: 14px;
@@ -683,8 +653,6 @@ body {
 .module-header-state .module-progress {
   margin: 0;
 }
-
-/* Состояние каждого Задания Модуля */
 
 .task-progress {
   list-style: none;
@@ -754,8 +722,6 @@ body {
   font-size: 20px;
 }
 
-/* Карточка Теории */
-
 .theory-title {
   margin: 0 0 16px;
   font-size: 22px;
@@ -791,8 +757,6 @@ body {
   font-size: 14px;
   line-height: 1.45;
 }
-
-/* Обозначения двух стандартов */
 
 .symbol-comparison {
   margin: 0 0 16px;
@@ -845,8 +809,6 @@ body {
 .theory .button-primary {
   margin-top: 4px;
 }
-
-/* Схема-задание: Холст */
 
 .canvas-editor {
   outline: none;
@@ -1128,8 +1090,6 @@ body {
   font-size: 14px;
 }
 
-/* Движок потенциометра: ползунок положения с процентным табло */
-
 .canvas-wiper-field {
   display: flex;
   align-items: center;
@@ -1155,8 +1115,6 @@ body {
   color: var(--text-muted);
   font-size: 14px;
 }
-
-/* Схема-задание: проверка Симулятором */
 
 .canvas-check {
   margin-left: auto;
@@ -1243,8 +1201,6 @@ body {
   color: #e0b34a;
 }
 
-/* Живое поведение: тумблер оверлея в панели Задания */
-
 .overlay-toggle {
   display: flex;
   align-items: center;
@@ -1277,8 +1233,6 @@ body {
   color: var(--text);
   border-color: var(--accent-dim);
 }
-
-/* Мультиметр: тумблер режима измерений, выбор режима и табло */
 
 .multimeter-toggle {
   display: flex;
@@ -1359,8 +1313,6 @@ body {
 .multimeter-probe-black {
   stroke: var(--probe-black);
 }
-
-/* Переключатель стандарта обозначений (ГОСТ/ANSI) */
 
 .standard-toggle {
   display: flex;
@@ -1445,8 +1397,6 @@ body {
     opacity: 1;
   }
 }
-
-/* Осциллограф переходного режима */
 
 .scope-panel {
   margin-top: 20px;
@@ -1567,8 +1517,6 @@ body {
   }
 }
 
-/* Оверлей токов и напряжений */
-
 .canvas-wire-reading,
 .canvas-component-reading {
   font-family: var(--monospace);
@@ -1590,8 +1538,6 @@ body {
 .canvas-reading-voltage {
   fill: var(--text-muted);
 }
-
-/* Данные: экспорт, импорт и сброс Прогресса */
 
 .data-controls {
   margin-top: 20px;

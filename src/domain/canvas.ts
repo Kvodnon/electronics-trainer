@@ -221,27 +221,22 @@ export function suggestPlacementPosition(canvas: CanvasState): { x: number; y: n
   return { x: 100, y: 100 };
 }
 
-/** Позиция на Холсте: узел сетки внутри поля. */
 function placement(x: number, y: number): { x: number; y: number } {
   return clampPosition({ x: snapToGrid(x), y: snapToGrid(y) });
 }
 
-/** Один и тот же вывод Компонента? */
 function samePin(a: PinRef, b: PinRef): boolean {
   return a.componentId === b.componentId && a.pin === b.pin;
 }
 
-/** Существует ли вывод с таким номером у этого Компонента? */
 function isValidPin(component: PlacedComponent, pin: number): boolean {
   return Number.isInteger(pin) && pin >= 0 && pin < pinCountOf(component.kind);
 }
 
-/** Следующий поворот по часовой стрелке: 0 → 90 → 180 → 270 → 0. */
 function nextRotation(rotation: Rotation): Rotation {
   return ((rotation + 90) % 360) as Rotation;
 }
 
-/** Следующий свободный идентификатор: c1, c2… / w1, w2… по максимуму существующих. */
 function nextId(prefix: string, taken: readonly string[]): string {
   let max = 0;
   for (const id of taken) {
@@ -435,7 +430,6 @@ function withUpdatedComponent(
   return withHistory(history, { components, wires: state.wires });
 }
 
-/** Записывает новое состояние Холста в историю: настоящее уходит в прошлое. */
 function withHistory(history: CanvasHistory, present: CanvasState): CanvasHistory {
   return {
     past: [...history.past, history.present],
@@ -444,7 +438,6 @@ function withHistory(history: CanvasHistory, present: CanvasState): CanvasHistor
   };
 }
 
-/** История, начинающаяся с данного состояния: для загрузки снимка схемы. */
 function emptyHistoryOf(present: CanvasState): CanvasHistory {
   return { past: [], present, future: [] };
 }

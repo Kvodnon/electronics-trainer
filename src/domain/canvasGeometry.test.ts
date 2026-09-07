@@ -119,7 +119,6 @@ function expectOrthogonal(route: readonly { x: number; y: number }[]): void {
     const axisAligned =
       Math.abs(route[i].x - route[i - 1].x) === 0 || Math.abs(route[i].y - route[i - 1].y) === 0;
     expect(axisAligned, `сегмент ${i - 1}→${i} не ортогональный: ${JSON.stringify(route)}`).toBe(true);
-    // Вырожденные сегменты-точки тоже не нужны
     expect(route[i]).not.toEqual(route[i - 1]);
   }
 }

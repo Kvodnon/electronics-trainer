@@ -213,7 +213,6 @@ describe('Экзамен Модуля', () => {
     expect(isExamUnlocked(course.modules[0], emptyProgress)).toBe(false);
     expect(isExamUnlocked(course.modules[0], passed('m1-a'))).toBe(false);
 
-    // Из очереди закрытый экзамен исключён: ученику он не показывается
     const queue = moduleTaskQueue(course.modules[0], emptyProgress);
     expect(queue.map((task) => task.id)).toEqual(['m1-a', 'm1-b']);
   });
@@ -272,7 +271,6 @@ describe('Решено с первой попытки', () => {
 
   it('неудачная проверка Схема-задания (без ухода из Задания) тоже ломает «первую попытку»', () => {
     const afterFailure = progressReducer(emptyProgress, { type: 'attempt-failed', taskId: 'm1-exam' });
-    // Состояние Задания не меняется: Схема-задание остаётся на месте до решения
     expect(taskStateOf(afterFailure, 'm1-exam')).toBe('not-started');
     expect(moduleTaskQueue(course.modules[0], afterFailure).map((task) => task.id)).toEqual([
       'm1-a',
@@ -299,7 +297,6 @@ describe('Решено с первой попытки', () => {
   });
 
   it('Прогресс Модуля считает решённые с первой попытки', () => {
-    // m1-a — с первой попытки, m1-b — после ошибки, экзамен не тронут
     const withRetry = progressReducer(emptyProgress, {
       type: 'task-returned-for-retry',
       taskId: 'm1-b',

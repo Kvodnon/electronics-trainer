@@ -329,7 +329,6 @@ function branchResistance(branch: Branch, contactStates?: ReadonlyMap<string, bo
   }
 }
 
-/** Это диод с кусочно-линейной моделью (диод или светодиод)? */
 function isDiodeKind(kind: ComponentKind): boolean {
   return kind === 'diode' || kind === 'led';
 }

@@ -334,7 +334,6 @@ describe('Объём контента М2 (тикет 16)', () => {
     for (const kind of ['pushbutton', 'transistor', 'led', 'capacitor', 'resistor'] as const) {
       expect(used.has(kind), `в Экзамене М2 не задействован ${kind}`).toBe(true);
     }
-    // задержка — условия во времени из тикета 14
     expect(exam.conditions.some((c) => c.kind === 'rc-time-constant')).toBe(true);
     expect(exam.conditions.some((c) => c.kind === 'capacitor-voltage-at')).toBe(true);
   });
@@ -713,7 +712,6 @@ describe('Палитра М2 привязана к Прогрессу (тике�
     const palette = sandboxPaletteOf(course, progress);
     expect(palette).toContain('led');
     expect(palette).toContain('diode');
-    // пройденные Модули свои Компоненты не теряют
     expect(module1Palette.every((kind: ComponentKind) => palette.includes(kind))).toBe(true);
   });
 
@@ -727,7 +725,6 @@ describe('Палитра М2 привязана к Прогрессу (тике�
     for (const kind of ['transistor', 'potentiometer', 'buzzer'] as const) {
       expect(palette).toContain(kind);
     }
-    // первоисточник Палитры Модуля — Палитры его Схема-заданий
     const modulePalette = modulePaletteOf(module2);
     expect(modulePalette).toContain('transistor');
     expect(modulePalette).toContain('potentiometer');

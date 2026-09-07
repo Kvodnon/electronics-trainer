@@ -106,7 +106,6 @@ describe('Числовой Вопрос: поток от ввода до пер�
     await submitAnswer(user, '1');
 
     expect(screen.getByText('Неверно')).toBeInTheDocument();
-    // Вердикт называет, что именно принималось
     expect(screen.getByRole('status')).toHaveTextContent('9,5 мА');
     expect(screen.getByRole('status')).toHaveTextContent('10,5 мА');
 
@@ -115,7 +114,6 @@ describe('Числовой Вопрос: поток от ввода до пер�
     expect(steps).toHaveLength(4);
     expect(steps[0]).toHaveTextContent('закон Ома');
 
-    // После вердикта ввод заблокирован — Разбор раскрыт
     expect(screen.getByRole('textbox', { name: 'Ответ' })).toBeDisabled();
   });
 });

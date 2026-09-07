@@ -86,7 +86,6 @@ describe('Холст: расстановка Компонентов', () => {
       history = canvasReducer(history, { type: 'component-placed', kind: 'resistor', x, y });
     }
 
-    // Первая позиция ряда занята — предлагаем следующую свободную
     expect(suggestPlacementPosition(history.present)).toEqual({ x: 340, y: 100 });
   });
 
@@ -109,7 +108,6 @@ describe('Холст: перемещение Компонентов', () => {
     const moved = history.present.components.find((c) => c.id === 'c2');
     expect(moved?.x).toBe(340);
     expect(moved?.y).toBe(260);
-    // Соединение не рвётся: Провод по-прежнему ссылается на те же выводы
     expect(history.present.wires).toHaveLength(1);
     expect(history.present.wires[0].from).toEqual({ componentId: 'c1', pin: 1 });
     expect(history.present.wires[0].to).toEqual({ componentId: 'c2', pin: 0 });
@@ -132,7 +130,6 @@ describe('Холст: поворот и удаление', () => {
   });
 
   it('Удаление Компонента убирает и все его Провода; цепи без него живут', () => {
-    // батарея — ключ — лампочка, параллельно батарея — резистор
     let history = historyWithPlaced(['battery', 'pushbutton', 'lamp', 'resistor']);
     history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c1', pin: 1 }, to: { componentId: 'c2', pin: 0 } });
     history = canvasReducer(history, { type: 'wire-drawn', from: { componentId: 'c2', pin: 1 }, to: { componentId: 'c3', pin: 0 } });
@@ -142,7 +139,6 @@ describe('Холст: поворот и удаление', () => {
     history = canvasReducer(history, { type: 'component-removed', componentId: 'c2' });
 
     expect(history.present.components.map((c) => c.id)).toEqual(['c1', 'c3', 'c4']);
-    // Оба Провода ключа исчезли вместе с ним; Провод резистора уцелел
     expect(history.present.wires).toHaveLength(1);
     expect(history.present.wires[0].to).toEqual({ componentId: 'c4', pin: 1 });
   });
@@ -197,7 +193,6 @@ describe('Холст: undo/redo и сброс', () => {
     history = canvasReducer(history, { type: 'component-moved', componentId: 'c2', x: 300, y: 200 });
     history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 4.5 } });
 
-    // Пять действий — пять отмен, каждая точна
     history = canvasReducer(history, { type: 'undo' });
     expect(history.present.components.find((c) => c.id === 'c1')?.voltage).toBe(9);
 
@@ -232,7 +227,6 @@ describe('Холст: undo/redo и сброс', () => {
 
     history = canvasReducer(history, { type: 'undo' });
     history = canvasReducer(history, { type: 'component-placed', kind: 'switch', x: 400, y: 300 });
-    // После нового действия redo больше не доступен
     const noFuture = canvasReducer(history, { type: 'redo' });
     expect(noFuture).toBe(history);
   });
@@ -270,8 +264,6 @@ describe('Холст: сериализация', () => {
     const restored: typeof history.present = JSON.parse(JSON.stringify(history.present));
     expect(restored).toEqual(history.present);
 
-    // Восстановленное состояние полноценно живёт: редактирование продолжается
-    // без конфликтов идентификаторов, undo/redo работают
     const continued = canvasReducer(
       { past: [], present: restored, future: [] },
       { type: 'component-placed', kind: 'pushbutton', x: 700, y: 300 },
@@ -297,7 +289,6 @@ describe('Холст: Провода', () => {
       to: { componentId: 'c1', pin: 1 },
     });
 
-    // Повторное соединение тех же выводов (в любую сторону) не создаёт второй Провод
     expect(history.present.wires).toHaveLength(1);
     expect(history.present.wires[0].from).toEqual({ componentId: 'c1', pin: 1 });
     expect(history.present.wires[0].to).toEqual({ componentId: 'c2', pin: 0 });
@@ -361,7 +352,6 @@ describe('Загрузка сохранённой схемы', () => {
     const loaded = canvasReducer(draft, { type: 'canvas-loaded', canvas: saved });
 
     expect(loaded.present).toEqual(saved);
-    // прежний черновик не возвращается: загрузка — новый сеанс правки
     expect(canvasReducer(loaded, { type: 'undo' }).present).toEqual(saved);
     expect(canvasReducer(loaded, { type: 'redo' })).toBe(loaded);
   });
@@ -392,7 +382,6 @@ describe('Холст М2: диод и светодиод', () => {
     let history = historyWithPlaced(['led']);
     history = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { color: 'green' } });
     expect(history.present.components[0].color).toBe('green');
-    // сопротивление — не поле светодиода
     const wrongField = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { resistance: 100 } });
     expect(wrongField).toBe(history);
   });
@@ -404,7 +393,6 @@ describe('Холст М2: диод и светодиод', () => {
     const untypedColor = { color: 'crimson' } as unknown as ComponentValuePatch;
     const badColor = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: untypedColor });
     expect(badColor).toBe(history);
-    // у диода нет правимого номинала вовсе
     const diodePatch = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { color: 'red' } });
     expect(diodePatch).toBe(history);
     const diodeResistance = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { resistance: 100 } });
@@ -426,7 +414,6 @@ describe('Холст М2: конденсатор (тикет 14)', () => {
 
     const negative = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { capacitance: -1e-6 } });
     const nan = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { capacitance: Number.NaN } });
-    // напряжение — не поле конденсатора
     const wrongKind = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 5 } });
     const unknown = canvasReducer(history, { type: 'component-value-set', componentId: 'missing', patch: { capacitance: 1e-6 } });
     expect(negative).toBe(history);
@@ -464,10 +451,8 @@ describe('Холст М2: транзистор, потенциометр и зу
     expect(badWiper(-0.1)).toBe(history);
     expect(badWiper(1.1)).toBe(history);
     expect(badWiper(Number.NaN)).toBe(history);
-    // напряжение — не поле потенциометра
     const wrongKind = canvasReducer(history, { type: 'component-value-set', componentId: 'c1', patch: { voltage: 5 } });
     expect(wrongKind).toBe(history);
-    // транзистор — как диод: правимого номинала не имеет
     const transistorPatch = canvasReducer(history, { type: 'component-value-set', componentId: 'c2', patch: { resistance: 100 } });
     expect(transistorPatch).toBe(history);
   });

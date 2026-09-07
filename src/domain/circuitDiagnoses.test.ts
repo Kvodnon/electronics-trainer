@@ -47,7 +47,6 @@ function evaluateTraps(canvas: CanvasState) {
 
 describe('диагноз: короткое замыкание', () => {
   it('лампочка замкнута Проводом накоротко → КЗ, подсвечена перемычка-Провод', () => {
-    // лампочка в контуре, но её выводы соединены одним и тем же узлом с полюсами батареи
     const verdict = evaluateTraps({
       components: [component('b', 'battery'), component('lamp1', 'lamp')],
       wires: [
@@ -59,14 +58,12 @@ describe('диагноз: короткое замыкание', () => {
     expect(verdict.outcome).toBe('incorrect');
     expect(verdict.diagnoses).toHaveLength(1);
     expect(verdict.diagnoses[0].kind).toBe('short-circuit');
-    // виновник — Провод-перемычка между полюсами, а не невинная батарея
     expect(verdict.diagnoses[0].spot).toEqual({ kind: 'wire', id: 'w3' });
     expect(verdict.diagnoses[0].text).toContain('Короткое замыкание');
     expect(verdict.diagnoses[0].text).toContain('А'); // ток КЗ в амперах, не в мА
   });
 
   it('замыкание цепочкой Проводов без прямой перемычки → подсвечена батарея', () => {
-    // узел среднего вывода резистора соединяет оба полюса: прямой перемычки нет
     const verdict = evaluateTraps({
       components: [component('b', 'battery'), component('r', 'resistor')],
       wires: [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 0), pin('b', 1))],
@@ -374,7 +371,6 @@ describe('диагноз М2: заряженный конденсатор — н
   });
 
   it('висящий в воздухе вывод конденсатора — по-прежнему честный «обрыв» с местом ошибки', () => {
-    // контур не замкнут: второй вывод конденсатора ни к чему не подключён
     const verdict = evaluateRc({
       components: [component('b', 'battery'), component('r', 'resistor'), component('c', 'capacitor')],
       wires: [

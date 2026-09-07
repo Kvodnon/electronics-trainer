@@ -82,7 +82,6 @@ describe('Раздел «Данные»: экспорт и импорт', () => 
     const user = userEvent.setup();
     const { onImport } = renderControls();
 
-    // Файл выбрался, но чтение сорвалось — сбой на настоящем FileReader
     const readSpy = vi
       .spyOn(FileReader.prototype, 'readAsText')
       .mockImplementation(function (this: FileReader) {
@@ -105,17 +104,14 @@ describe('Раздел «Данные»: начать заново', () => {
     const user = userEvent.setup();
     const { onReset } = renderControls();
 
-    // Первый щелчок только спрашивает
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     expect(screen.getByText(/Удалить весь Прогресс/)).toBeInTheDocument();
     expect(onReset).not.toHaveBeenCalled();
 
-    // Отмена возвращает кнопку без сброса
     await user.click(screen.getByRole('button', { name: 'Отмена' }));
     expect(screen.queryByText(/Удалить весь Прогресс/)).not.toBeInTheDocument();
     expect(onReset).not.toHaveBeenCalled();
 
-    // Подтверждение сбрасывает
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
     expect(onReset).toHaveBeenCalledOnce();

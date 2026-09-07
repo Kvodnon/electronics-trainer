@@ -57,7 +57,6 @@ describe('Свободный режим без проверки', () => {
 
     await assembleLampLoop(user);
 
-    // Симулятор считает схему без всякой проверки: лампочка светится
     const glow = document.querySelector('.symbol-lamp-glow');
     expect(glow).not.toBeNull();
     expect(glow!.getAttribute('opacity')).toBe('1');
@@ -69,7 +68,6 @@ describe('Свободный режим без проверки', () => {
     await assembleLampLoop(user);
 
     await user.click(screen.getByRole('checkbox', { name: 'Мультиметр' }));
-    // красный щуп на «плюсе» батареи, чёрный — на выводе лампочки
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
 
@@ -108,7 +106,6 @@ describe('Осциллограф в Песочнице (тикет 14)', () => {
     const user = userEvent.setup();
     renderSandboxWithCapacitor();
 
-    // пустая схема: панель есть, кривой нет — нечего измерять
     expect(screen.getByText('Осциллограф')).toBeInTheDocument();
     expect(document.querySelector('polyline.scope-curve')).toBeNull();
 
@@ -126,7 +123,6 @@ describe('Осциллограф в Песочнице (тикет 14)', () => {
     expect(document.querySelectorAll('polyline.scope-curve')).toHaveLength(1);
     expect(document.querySelector('.scope-toggle-mark')).not.toBeNull();
 
-    // проигрывание ведёт бегунок по кривой заряда
     await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
     expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
   });
@@ -149,17 +145,14 @@ describe('Мои схемы: сохранение, загрузка, удале�
     const user = userEvent.setup();
     renderSandbox();
     await saveRingCircuit(user, 'Кольцо');
-    // поле имени очистилось, схема в списке
     expect(screen.getByRole('textbox', { name: 'Название схемы' })).toHaveValue('');
     expect(screen.getByText('Кольцо')).toBeInTheDocument();
 
-    // черновик стирается, затем именованная схема загружается обратно
     await user.click(screen.getByRole('button', { name: 'Сбросить схему' }));
     expect(document.querySelector('.symbol-lamp-glow')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Загрузить «Кольцо»' }));
 
-    // без потерь: позиции, поворот лампочек и Провод на месте
     expect(screen.getByRole('button', { name: 'Батарея 1' }).getAttribute('transform')).toBe(
       'translate(100 100) rotate(0)',
     );
@@ -167,7 +160,6 @@ describe('Мои схемы: сохранение, загрузка, удале�
       'translate(220 100) rotate(90)',
     );
     expect(screen.getByRole('button', { name: 'Провод w1' })).toBeInTheDocument();
-    // и схема сразу живёт — Симулятор считается по загруженному Холсту
     expect(document.querySelector('.symbol-lamp-glow')).not.toBeNull();
   });
 
@@ -181,9 +173,7 @@ describe('Мои схемы: сохранение, загрузка, удале�
     await user.type(screen.getByRole('textbox', { name: 'Название схемы' }), 'Опыт');
     await user.click(screen.getByRole('button', { name: 'Сохранить схему' }));
 
-    // копии нет — только перезаписанная схема
     expect(screen.getAllByText('Опыт')).toHaveLength(1);
-    // перезаписана текущим Холстом: после загрузки лампочки нет
     await user.click(screen.getByRole('button', { name: 'Загрузить «Опыт»' }));
     expect(screen.getByRole('button', { name: 'Батарея 1' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Лампочка 2' })).not.toBeInTheDocument();

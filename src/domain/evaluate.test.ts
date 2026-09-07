@@ -182,7 +182,6 @@ describe('evaluate: Схема-задание', () => {
     if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
     expect(verdict.conditionChecks).toHaveLength(3);
     expect(verdict.conditionChecks.every((check) => check.passed)).toBe(true);
-    // Разбор построен на вычисленном токе
     expect(verdict.conditionChecks[2].text).toContain('9 мА');
     expect(verdict.solution.readings).toHaveLength(2);
   });

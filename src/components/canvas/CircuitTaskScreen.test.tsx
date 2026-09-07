@@ -98,7 +98,6 @@ describe('Палитра М1', () => {
     for (const name of ['Батарея', 'Резистор', 'Лампочка', 'Выключатель', 'Ключ', 'Моторчик']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
-    // у каждого элемента Палитры — свой символ
     const symbols = document.querySelectorAll('svg.palette-symbol');
     expect(symbols).toHaveLength(6);
     for (const symbol of symbols) {
@@ -116,7 +115,6 @@ describe('Постановка и правка Компонентов', () => {
 
     const onCanvas = screen.getByRole('button', { name: 'Батарея 1' });
     expect(onCanvas.getAttribute('transform')).toBe('translate(100 100) rotate(0)');
-    // номинал по умолчанию подписан рядом
     expect(screen.getByText('9 В')).toBeInTheDocument();
 
     await user.click(onCanvas);
@@ -151,7 +149,6 @@ describe('Постановка и правка Компонентов', () => {
     await user.click(screen.getByRole('button', { name: 'Применить' }));
     expect(screen.getByText('4,5 В')).toBeInTheDocument();
 
-    // после правки поле перерисовывается с новым номиналом
     const refreshed = screen.getByLabelText('Номинал, В');
     await user.clear(refreshed);
     await user.type(refreshed, 'девять');
@@ -186,7 +183,6 @@ describe('Постановка и правка Компонентов', () => {
     expect(screen.queryByRole('button', { name: 'Провод w1' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Батарея 1' })).not.toBeInTheDocument();
 
-    // второй раз — клавишей Delete
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка 2' }));
     await user.keyboard('{Delete}');
@@ -201,7 +197,6 @@ describe('Провода', () => {
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
 
-    // первый клик по выводу — начало Провода, подсказка меняется
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
     expect(screen.getByText(/Проведите Провод до второго вывода/)).toBeInTheDocument();
 
@@ -220,7 +215,6 @@ describe('Провода', () => {
     await user.keyboard('{Escape}');
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
 
-    // после Esc клик по выводу начинает новый Провод, а не завершает старый
     expect(screen.queryByRole('button', { name: 'Провод w1' })).not.toBeInTheDocument();
     expect(screen.getByText(/Проведите Провод до второго вывода/)).toBeInTheDocument();
   });
@@ -250,14 +244,12 @@ describe('Провода', () => {
 
     const svg = mockCanvasRect(container);
     const wireLine = () => container.querySelector('polyline.wire-line')?.getAttribute('points');
-    // прямо навстречу: батарея (100,100) → лампочка (220,100)
     expect(wireLine()).toBe('140,100 180,100');
 
     dragTo(screen.getByRole('button', { name: 'Лампочка 2' }), svg, 220, 100, 420, 260);
     expect(screen.getByRole('button', { name: 'Лампочка 2' }).getAttribute('transform')).toBe(
       'translate(420 260) rotate(0)',
     );
-    // Провод перестроился за лампочкой — ортогональным маршрутом
     expect(wireLine()).toBe('140,100 360,100 360,260 380,260');
     expect(screen.getByRole('button', { name: 'Провод w1' })).toBeInTheDocument();
   });
@@ -279,22 +271,18 @@ describe('Undo/redo и сброс', () => {
     await user.click(screen.getByRole('button', { name: 'Лампочка 2' }));
     await user.click(screen.getByRole('button', { name: 'Повернуть' }));
 
-    // поворот
     await user.click(undo);
     expect(screen.getByRole('button', { name: 'Лампочка 2' }).getAttribute('transform')).toBe(
       'translate(220 100) rotate(0)',
     );
-    // Провод
     await user.click(undo);
     expect(screen.queryByRole('button', { name: 'Провод w1' })).not.toBeInTheDocument();
-    // лампочка, батарея
     await user.click(undo);
     expect(screen.queryByRole('button', { name: 'Лампочка 2' })).not.toBeInTheDocument();
     await user.click(undo);
     expect(screen.queryByRole('button', { name: 'Батарея 1' })).not.toBeInTheDocument();
     expect(undo).toBeDisabled();
 
-    // всё возвращается
     await user.click(redo);
     expect(screen.getByRole('button', { name: 'Батарея 1' })).toBeInTheDocument();
   });
@@ -386,7 +374,6 @@ describe('Кнопка «Проверить»', () => {
     renderCheckableTask(litTask);
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
-    // только один Провод — контур не замкнут
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
 
@@ -395,7 +382,6 @@ describe('Кнопка «Проверить»', () => {
     expect(screen.getByText(/Лампочка не горит: мощность 0 Вт/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Дальше' })).not.toBeInTheDocument();
 
-    // ученик достраивает контур — устаревший вердикт исчезает
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Лампочка 2' }));
     expect(screen.queryByText('Не пройдено')).not.toBeInTheDocument();
@@ -414,7 +400,6 @@ describe('Кнопка «Проверить»', () => {
     await user.click(screen.getByRole('button', { name: 'Резистор' }));
     await user.click(screen.getByRole('button', { name: 'Светодиод' }));
 
-    // контур не замкнут — проверка честно проваливается
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Не пройдено')).toBeInTheDocument();
 
@@ -423,7 +408,6 @@ describe('Кнопка «Проверить»', () => {
 
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
-    // Разбор называет измеренный ток и состояние светодиода
     expect(screen.getByText(/Ток через светодиод/)).toBeInTheDocument();
     expect(screen.getByText(/Светодиод светится/)).toBeInTheDocument();
   });
@@ -495,7 +479,6 @@ describe('Диагноз и подсветка места ошибки', () => {
     renderCheckableTask(litTask);
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
-    // только один Провод — контур не замкнут
     await user.click(screen.getByRole('button', { name: 'Вывод 2: Батарея 1' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
 
@@ -503,7 +486,6 @@ describe('Диагноз и подсветка места ошибки', () => {
 
     expect(screen.getByText('Не пройдено')).toBeInTheDocument();
     expect(screen.getByText(/Обрыв цепи/)).toBeInTheDocument();
-    // подсветка указывает на конкретный Компонент со свободным выводом
     const lamp = screen.getByRole('button', { name: 'Лампочка 2' });
     expect(lamp.getAttribute('class')).toContain('canvas-component-fault');
     expect(document.querySelector('.fault-ring')).not.toBeNull();
@@ -563,7 +545,6 @@ describe('Оверлей токов и напряжений', () => {
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await assembleLoop(user, 'Лампочка 2');
 
-    // до проверки оверлей недоступен
     const toggle = screen.getByRole('checkbox', { name: 'Токи и напряжения' });
     expect(toggle).toBeDisabled();
 
@@ -609,12 +590,10 @@ describe('Мультиметр', () => {
     await user.click(screen.getByRole('button', { name: 'Лампочка' }));
     await assembleLoop(user, 'Лампочка 2');
 
-    // выключен — табло нет; включается — появляются режим и табло без показания
     expect(multimeterToggle()).not.toBeChecked();
     await user.click(multimeterToggle());
     expect(display().textContent).toBe('—');
 
-    // красный щуп на «плюсе» батареи, чёрный на земле (вывод лампочки)
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
     expect(display().textContent).toBe('—');
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
@@ -635,7 +614,6 @@ describe('Мультиметр', () => {
     await user.keyboard('{Escape}');
     expect(display().textContent).toBe('—');
 
-    // теперь красный на земле, чёрный на «плюсе»
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Лампочка 2' }));
     await user.click(screen.getByRole('button', { name: 'Вывод 1: Батарея 1' }));
     expect(display().textContent).toBe('-8,99 В');
@@ -645,17 +623,14 @@ describe('Мультиметр', () => {
     const user = userEvent.setup();
     renderTask();
     await assembleSwitchedLoop(user);
-    // замыкаем выключатель через панель правки
     await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
     await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
 
     await user.click(multimeterToggle());
     await user.selectOptions(modeSelect(), 'current');
-    // клик по Компоненту — щупы на его ветви: ток контура
     await user.click(screen.getByRole('button', { name: 'Выключатель 2' }));
     expect(display().textContent).toBe('74,9 мА');
 
-    // размыкание — честное «нет тока»; замыкание — ток возвращается; режим не трогали
     await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
     expect(display().textContent).toBe('0 А');
     await user.click(screen.getByRole('checkbox', { name: 'замкнут' }));
@@ -702,7 +677,6 @@ describe('Мультиметр', () => {
     expect(document.querySelectorAll('.multimeter-probe-red')).toHaveLength(1);
     expect(document.querySelectorAll('.multimeter-probe-black')).toHaveLength(1);
 
-    // режим тока — щупы обеих ветвей Компонента
     await user.selectOptions(modeSelect(), 'current');
     await user.click(screen.getByRole('button', { name: 'Лампочка 2' }));
     expect(document.querySelectorAll('.multimeter-probe-red')).toHaveLength(1);
@@ -737,7 +711,6 @@ describe('Стандарт обозначений', () => {
     expect(paletteResistor.querySelector('svg.palette-symbol rect')).toBeNull();
     expect(hasSlantedPath(paletteResistor.querySelector('svg.palette-symbol')!)).toBe(true);
 
-    // и обратно
     await user.selectOptions(standardSelect(), 'gost');
     expect(canvasResistor.querySelector('rect')).not.toBeNull();
   });
@@ -841,7 +814,6 @@ describe('Подсказки и Экзамен на экране Схема-за
 
     expect(screen.getByText('Экзамен')).toBeInTheDocument();
     expect(screen.queryByText('Схема-задание')).not.toBeInTheDocument();
-    // У экзамена тоже есть своя лестница Подсказок
     expect(screen.getByRole('button', { name: 'Подсказка' })).toBeInTheDocument();
   });
 });
@@ -905,16 +877,13 @@ describe('Осциллограф переходного режима', () => {
     expect(document.querySelector('.scope-playhead')).toBeNull();
     expect(document.querySelector('.symbol-capacitor-charge')).toBeNull();
 
-    // для наполнения конденсатору нужна цепь: собираем контур заряда
     await assembleChargingLoop(user);
     await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
 
-    // в момент старта бегунок на нуле; дальше время бежит и конденсатор наполняется
     expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
     expect(document.querySelector('.scope-playhead')).not.toBeNull();
     await waitFor(() => expect(document.querySelector('.symbol-capacitor-charge')).not.toBeNull());
 
-    // остановка останавливает: кнопка возвращается к проигрыванию
     await user.click(screen.getByRole('button', { name: 'Остановить' }));
     expect(screen.getByRole('button', { name: 'Проиграть заряд' })).toBeInTheDocument();
   }, 10_000);
@@ -1025,12 +994,10 @@ describe('Задания М2: транзистор, потенциометр, з
     // базовый резистор 10 кОм — ток кнопки остаётся «малым» (условие Задания)
     await setResistance(user, 'Резистор 3', '10кОм');
 
-    // кнопка разомкнута: транзистор закрыт, светодиод не светится — ловушка честно названа
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Не пройдено')).toBeInTheDocument();
     expect(screen.getByText(/контакт разомкнут/)).toBeInTheDocument();
 
-    // замыкаем кнопку: малый ток базы открывает большой ток коллектора
     await closeSwitch(user, 'Ключ 2');
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();

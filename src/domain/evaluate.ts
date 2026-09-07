@@ -42,7 +42,6 @@ export interface ChoiceReview {
 export interface ChoiceQuestionEvaluation {
   readonly kind: 'choice-question';
   readonly outcome: 'correct' | 'incorrect';
-  /** Вариант, который был выбран Ответом. */
   readonly chosenChoiceId: ChoiceId;
   /** Разбор к каждому варианту, не только к выбранному. */
   readonly reviews: readonly ChoiceReview[];

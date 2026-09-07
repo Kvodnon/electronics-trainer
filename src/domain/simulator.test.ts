@@ -472,7 +472,6 @@ describe('Диод и светодиод: кусочно-линейные мод
     expect(isLedLit({ ...base, current: LED_LIT_CURRENT, pinCurrents: [-1, 1] })).toBe(true);
     expect(ledBrightness({ ...base, current: LED_FULL_CURRENT / 2, pinCurrents: [-1, 1] })).toBeCloseTo(0.5);
     expect(ledBrightness({ ...base, current: 0.05, pinCurrents: [-1, 1] })).toBe(1);
-    // обратный ток (запертый диод) свечения не даёт
     expect(ledBrightness({ ...base, current: -0.01, pinCurrents: [1, -1] })).toBe(0);
   });
 });
