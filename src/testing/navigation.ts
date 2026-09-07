@@ -100,6 +100,38 @@ export async function setResistance(
   await user.click(screen.getByRole('button', { name: 'Применить' }));
 }
 
+/**
+ * Собирает задержанный ключ: как wireTransistorKey, плюс конденсатор —
+ * с выхода резистора базы (база транзистора) на «минус» батареи. Заряжаясь
+ * через резистор базы, конденсатор растягивает открытие ключа во времени.
+ */
+export async function wireDelayKey(
+  user: User,
+  names: readonly [
+    battery: string,
+    pushbutton: string,
+    baseResistor: string,
+    collectorResistor: string,
+    transistor: string,
+    led: string,
+    capacitor: string,
+  ],
+): Promise<void> {
+  const [battery, pushbutton, baseResistor, collectorResistor, transistor, led, capacitor] = names;
+  await wireTransistorKey(user, [
+    battery,
+    pushbutton,
+    baseResistor,
+    collectorResistor,
+    transistor,
+    led,
+  ]);
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${baseResistor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 1: ${capacitor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${capacitor}` }));
+  await user.click(screen.getByRole('button', { name: `Вывод 2: ${battery}` }));
+}
+
 /** Выбирает выключатель и замыкает его в панели правки. */
 export async function closeSwitch(user: User, componentName: string): Promise<void> {
   await user.click(screen.getByRole('button', { name: componentName }));

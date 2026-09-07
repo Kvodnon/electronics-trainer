@@ -10,6 +10,7 @@ import {
   enterModule1Tasks,
   passTheory,
   setResistance,
+  wireDelayKey,
   wireForwardDiode,
   wireRing,
   wireTransistorKey,
@@ -33,32 +34,46 @@ function seedModule1Progress(except: readonly string[] = []): void {
 }
 
 /**
- * Отвечает на Вопросы М2 (диод, ток светодиода, конденсатор, τ, β транзистора,
- * режим ключа, движок потенциометра, порог зуммера) — очередь доходит до Схема-заданий.
+ * Отвечает на Вопросы М2 (диод, ток через диод, ток светодиода, цвет порога,
+ * конденсатор, τ, темп τ, режим ключа, β транзистора, резистор базы, движок
+ * потенциометра, порог зуммера, резистор зуммера) — очередь доходит до
+ * Схема-заданий.
  */
 async function passModule2Questions(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Светодиод не светится' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
+  await user.click(screen.getByRole('button', { name: 'Ответить' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
   await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '15мА');
   await user.click(screen.getByRole('button', { name: 'Ответить' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.click(screen.getByRole('button', { name: 'Синий' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
   await user.click(screen.getByRole('button', { name: 'Ток прекращается' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
   await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '1с');
   await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
-  // транзистор: режим ключа, затем β·Iб
+  await user.click(screen.getByRole('button', { name: 'Вырастет в 4 раза' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  // транзистор: режим ключа, затем β·Iб, затем резистор базы
   await user.click(screen.getByRole('button', { name: 'В насыщении: раскрыт до упора' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
   await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '10мА');
   await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.click(screen.getByRole('button', { name: /растёт неограниченно/ }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
   // потенциометр: половина батареи на движке
   await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '4,5В');
   await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
-  // зуммер: ток ниже порога — молчит
+  // зуммер: ток ниже порога — молчит, затем номинал резистора для 60 мА
   await user.click(screen.getByRole('button', { name: 'Тишину: ток ниже порога' }));
+  await user.click(screen.getByRole('button', { name: 'Дальше' }));
+  await user.type(screen.getByRole('textbox', { name: 'Ответ' }), '100Ом');
+  await user.click(screen.getByRole('button', { name: 'Ответить' }));
   await user.click(screen.getByRole('button', { name: 'Дальше' }));
 }
 
@@ -69,9 +84,9 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 15 (тикет 15)
+    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 20 (тикет 16)
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 15')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
 
     // М1 доступна, М2 заблокирована с подсказкой
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
@@ -360,17 +375,35 @@ describe('Схема-задание в потоке Курса', () => {
     expect(screen.getByText(/Зуммер звучит/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
 
-    // Экзамен М2 — моторчик должен крутиться при токе 60–100 мА
+    // Экзамен М2 — задержанное включение: кнопка через RC-цепь в базе
+    // открывает транзистор со светодиодом. База 100 кОм даёт τ = 10 с:
+    // в t = 1 с задержка ещё идёт, к t = 3 с светодиод уже горит (≈ 7 мА)
     expect(screen.getByText('Экзамен')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Батарея' }));
-    await user.click(screen.getByRole('button', { name: 'Выключатель' }));
+    await user.click(screen.getByRole('button', { name: 'Ключ' }));
     await user.click(screen.getByRole('button', { name: 'Резистор' }));
-    await user.click(screen.getByRole('button', { name: 'Моторчик' }));
-    await wireRing(user, ['Батарея 1', 'Резистор 3', 'Моторчик 4', 'Выключатель 2']);
-    await setResistance(user, 'Резистор 3', '50');
-    await closeSwitch(user, 'Выключатель 2');
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Транзистор' }));
+    await user.click(screen.getByRole('button', { name: 'Светодиод' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    await wireDelayKey(user, [
+      'Батарея 1',
+      'Ключ 2',
+      'Резистор 3',
+      'Резистор 4',
+      'Транзистор 5',
+      'Светодиод 6',
+      'Конденсатор 7',
+    ]);
+    await setResistance(user, 'Резистор 3', '100кОм');
+    await setResistance(user, 'Резистор 4', '1кОм');
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    // τ назван дважды — в формулировке Экзамена и в измеренной проверке;
+    // контрольные моменты t = 1 с и t = 3 с — в измеренных проверках с числами
+    expect(screen.getAllByText(/Постоянная времени RC-цепи/)).toHaveLength(2);
+    expect(screen.getAllByText(/в момент t = 1 с/)).toHaveLength(1);
+    expect(screen.getAllByText(/в момент t = 3 с/)).toHaveLength(1);
 
     await user.click(screen.getByRole('button', { name: 'Дальше' }));
     expect(screen.getByText('Модуль пройден')).toBeInTheDocument();
@@ -536,7 +569,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     window.localStorage.clear();
     const secondRender = render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 15')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
 
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
     expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
@@ -596,7 +629,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 15')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Заблокирован' })).toBeDisabled();
 
@@ -607,6 +640,6 @@ describe('Данные: экспорт, импорт и сброс', () => {
     firstRender.unmount();
     render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 15')).toBeInTheDocument();
+    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
   });
 });

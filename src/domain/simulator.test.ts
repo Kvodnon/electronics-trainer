@@ -153,6 +153,24 @@ describe('solveDc: коммутация и поведенческие состо
     expect(readingOf(solveDc(build(false)), 'r')!.current).toBe(0);
   });
 
+  it('показание контакта следует переопределению: разомкнутый нарисованный ключ с contactStates «замкнут» читается как замкнутый', () => {
+    // Переходный режим проверяет Задание по схеме после переключения: решение
+    // считается с контактами «наоборот», и показания Компонентов обязаны
+    // описывать именно эту топологию, а не нарисованную.
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('sw', 'switch', { closed: false }), component('r', 'resistor')],
+      [
+        wire('w1', pin('b', 0), pin('sw', 0)),
+        wire('w2', pin('sw', 1), pin('r', 0)),
+        wire('w3', pin('r', 1), pin('b', 1)),
+      ],
+    );
+    const solution = solveDc(canvas, { contactStates: new Map([['sw', true]]) });
+    expectCloseTo(readingOf(solution, 'r')!.current, 0.009);
+    expectCloseTo(readingOf(solution, 'sw')!.current, 0.009);
+    expectCloseTo(readingOf(solution, 'sw')!.voltage, 9e-6, 0.05);
+  });
+
   it('ключ-кнопка ведёт себя как выключатель: замкнута — цепь работает', () => {
     const build = (closed: boolean): CanvasState =>
       canvasOf(

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { course } from './course';
 import { module1, module1Palette } from './m1';
-import { module2 } from './m2';
+import { module2, module2Palette } from './m2';
 import { isComponentKind, type CanvasState, type ComponentKind, type PlacedComponent, type Wire } from '../domain/canvas';
 import { defaultValuesOf } from '../domain/canvas';
 import type { CourseModule } from '../domain/course';
@@ -15,7 +15,7 @@ import type {
 import { checkConditions } from '../domain/circuitConditions';
 import { solveDc } from '../domain/simulator';
 import { evaluate } from '../domain/evaluate';
-import { emptyProgress, modulePaletteOf, progressReducer, sandboxPaletteOf } from '../domain/course';
+import { emptyProgress, examOf, modulePaletteOf, progressReducer, sandboxPaletteOf } from '../domain/course';
 
 /**
  * Контент-линтер (тикет 12): структурные гарантии всего Курса. Каждый Вопрос —
@@ -305,6 +305,45 @@ describe('Объём контента М1 (тикет 12)', () => {
   });
 });
 
+describe('Объём контента М2 (тикет 16)', () => {
+  it('минимум четыре темы Теории (по одной на волну 13–15 и с запасом)', () => {
+    expect(module2.theory.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('от 12 до 16 Вопросов обоих видов', () => {
+    const questions = questionsOf(module2);
+    expect(questions.length).toBeGreaterThanOrEqual(12);
+    expect(questions.length).toBeLessThanOrEqual(16);
+    expect(questions.some((task) => task.kind === 'choice-question')).toBe(true);
+    expect(questions.some((task) => task.kind === 'numeric-question')).toBe(true);
+  });
+
+  it('от 5 до 7 Схема-заданий и ровно один Экзамен', () => {
+    const circuits = circuitTasksOf(module2);
+    expect(circuits.filter((task) => !task.isExam).length).toBeGreaterThanOrEqual(5);
+    expect(circuits.filter((task) => !task.isExam).length).toBeLessThanOrEqual(7);
+    expect(circuits.filter((task) => task.isExam)).toHaveLength(1);
+  });
+
+  it('Экзамен объединяет темы Модуля: кнопка, транзистор, светодиод и RC-цепь в одном Задании', () => {
+    const exam = examOf(module2);
+    if (!exam) throw new Error('фикстура: в М2 нет Экзамена');
+    const used = new Set(
+      exam.conditions.flatMap((c) => (c.kind === 'component-used' ? [c.componentKind] : [])),
+    );
+    for (const kind of ['pushbutton', 'transistor', 'led', 'capacitor', 'resistor'] as const) {
+      expect(used.has(kind), `в Экзамене М2 не задействован ${kind}`).toBe(true);
+    }
+    // задержка — условия во времени из тикета 14
+    expect(exam.conditions.some((c) => c.kind === 'rc-time-constant')).toBe(true);
+    expect(exam.conditions.some((c) => c.kind === 'capacitor-voltage-at')).toBe(true);
+  });
+
+  it('объявленная Палитра М2 совпадает с объединением Палитр его Заданий', () => {
+    expect(modulePaletteOf(module2)).toEqual(module2Palette);
+  });
+});
+
 /** Компонент с номиналами по умолчанию и заданными правками. */
 function comp(id: string, kind: ComponentKind, values: Partial<PlacedComponent> = {}): PlacedComponent {
   return { id, kind, x: 0, y: 0, rotation: 0, ...defaultValuesOf(kind), ...values };
@@ -573,6 +612,79 @@ describe('Схема-задания М2 решаемы: транзистор, п
   it('«зуммер»: резистор по умолчанию (1 кОм) тих — ток ниже порога звучания', () => {
     const canvas = ring(comp('bz', 'buzzer'), comp('bat', 'battery'), comp('r1', 'resistor'));
     const verdict = evaluate(circuitTaskOf('m2-buzzer-check'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
+  });
+});
+
+describe('Экзамен М2 решаем: кнопка → RC-задержка → транзистор → светодиод (тикет 16)', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    return circuitTaskIn(module2, id);
+  }
+
+  /**
+   * Схема задержанного включения: кнопка с резистором базы — в базу (вывод 0),
+   * конденсатор с базы на «минус», коллектор (вывод 1) питается через второй
+   * резистор и светодиод, эмиттер (вывод 2) — на «минус». Кнопка рисуется
+   * разомкнутой — переходный режим сам замыкает её в t = 0,5 с, и конденсатор
+   * начинает заряжаться через резистор базы.
+   */
+  function examCanvas(
+    baseResistance: number,
+    collectorResistance: number,
+    capacitance: number,
+    buttonClosed = false,
+  ): CanvasState {
+    return {
+      components: [
+        comp('bat', 'battery'),
+        comp('btn', 'pushbutton', { closed: buttonClosed }),
+        comp('rb', 'resistor', { resistance: baseResistance }),
+        comp('q', 'transistor'),
+        comp('rc', 'resistor', { resistance: collectorResistance }),
+        comp('led', 'led'),
+        comp('c', 'capacitor', { capacitance }),
+      ],
+      wires: [
+        { id: 'w1', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'btn', pin: 0 } },
+        { id: 'w2', from: { componentId: 'btn', pin: 1 }, to: { componentId: 'rb', pin: 0 } },
+        { id: 'w3', from: { componentId: 'rb', pin: 1 }, to: { componentId: 'q', pin: 0 } },
+        { id: 'w4', from: { componentId: 'rb', pin: 1 }, to: { componentId: 'c', pin: 0 } },
+        { id: 'w5', from: { componentId: 'c', pin: 1 }, to: { componentId: 'bat', pin: 1 } },
+        { id: 'w6', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'rc', pin: 0 } },
+        { id: 'w7', from: { componentId: 'rc', pin: 1 }, to: { componentId: 'led', pin: 0 } },
+        { id: 'w8', from: { componentId: 'led', pin: 1 }, to: { componentId: 'q', pin: 1 } },
+        { id: 'w9', from: { componentId: 'q', pin: 2 }, to: { componentId: 'bat', pin: 1 } },
+      ],
+    };
+  }
+
+  it('эталон: база 100 кОм (τ ≈ 10 с), коллектор 1 кОм — задержка идёт в t = 1 с, к t = 3 с светодиод горит', () => {
+    assertSolvable(circuitTaskOf('m2-exam'), examCanvas(100_000, 1_000, 100e-6));
+  });
+
+  it('эталон обязан измерять задержку: ёмкость в 10 раз меньше уводит τ из границ', () => {
+    const canvas = examCanvas(100_000, 1_000, 10e-6);
+    const verdict = evaluate(circuitTaskOf('m2-exam'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    // конденсатор доскакивает до порога транзистора за 0,08 с: и τ вне границ,
+    // и «задержка ещё идёт в t = 1 с» сорвано — в t = 1 с конденсатор уже у порога
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.filter((check) => !check.passed).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('нарисованная замкнутой кнопка решение не проходит: в t = 0,5 с она разомкнётся', () => {
+    const canvas = examCanvas(100_000, 1_000, 100e-6, true);
+    const verdict = evaluate(circuitTaskOf('m2-exam'), { kind: 'circuit-answer', canvas });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);
+  });
+
+  it('резисторы по умолчанию (по 1 кОм) решение не проходят: τ на два порядка меньше границ', () => {
+    const canvas = examCanvas(1_000, 1_000, 100e-6);
+    const verdict = evaluate(circuitTaskOf('m2-exam'), { kind: 'circuit-answer', canvas });
     if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
     expect(verdict.outcome).not.toBe('correct');
     expect(verdict.conditionChecks.some((check) => !check.passed)).toBe(true);

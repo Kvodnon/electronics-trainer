@@ -901,7 +901,9 @@ function readingOfComponent(
       : 0;
     return reading(current);
   }
-  const resistance = branchResistance(branch);
+  // Решение могло считаться с переопределёнными контактами (переходный
+  // режим после переключения) — показание обязано описывать ту же топологию.
+  const resistance = branchResistance(branch, options.contactStates);
   const current = Number.isFinite(resistance) ? voltage / resistance : 0;
   return reading(current);
 }
