@@ -984,13 +984,16 @@ describe('Объём контента М4 (тикет 21): задания фил
     return circuitTaskIn(module4, id);
   }
 
-  it('три Схема-задания нарастают от фильтров к выпрямителю; Экзамена до тикета 22 нет', () => {
+  it('пять Схема-заданий нарастают от фильтров к выпрямителю, Экзамен — последний', () => {
     expect(circuitTasksOf(module4).map((task) => task.id)).toEqual([
       'm4-filter-lowpass',
       'm4-filter-highpass',
+      'm4-rl-lowpass',
+      'm4-rl-highpass',
       'm4-rectifier',
+      'm4-exam',
     ]);
-    expect(module4.tasks.some(isExamTask)).toBe(false);
+    expect(isExamTask(module4.tasks[module4.tasks.length - 1])).toBe(true);
   });
 
   it('оба новых условия-измерения в работе: ослабление по АЧХ и форма выпрямленного', () => {
@@ -1084,5 +1087,166 @@ describe('Объём контента М4 (тикет 21): задания фил
     expect(verdict.outcome).not.toBe('correct');
     const shape = verdict.conditionChecks.find((check) => check.condition.kind === 'rectified-output');
     expect(shape?.text).toContain('в минус');
+  });
+});
+
+describe('Объём контента М4 (тикет 22): полный Модуль и приёмка Курса', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    return circuitTaskIn(module4, id);
+  }
+
+  /** Последовательный контур с источником ~: «плюс» источника — в вывод 0 первого Компонента. */
+  function acLoop(source: PlacedComponent, chain: readonly PlacedComponent[]): CanvasState {
+    const wires: Wire[] = [
+      { id: 'w1', from: { componentId: source.id, pin: 0 }, to: { componentId: chain[0].id, pin: 0 } },
+    ];
+    chain.forEach((component, index) => {
+      const last = index + 1 === chain.length;
+      wires.push({
+        id: `w${wires.length + 1}`,
+        from: { componentId: component.id, pin: 1 },
+        to: last
+          ? { componentId: source.id, pin: 1 }
+          : { componentId: chain[index + 1].id, pin: 0 },
+      });
+    });
+    return { components: [source, ...chain], wires };
+  }
+
+  /**
+   * Экзамен: две ветви прямо на выводах источника ~ — ветвь фильтра
+   * «катушка — резистор» и ветвь выпрямителя «диод — лампочка».
+   */
+  function examCanvas(firstBranchResistance: number, diodeReversed = false): CanvasState {
+    const components = [
+      comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+      comp('l', 'inductor'),
+      comp('r1', 'resistor', { resistance: firstBranchResistance }),
+      comp('d', 'diode'),
+      comp('lamp', 'lamp'),
+    ];
+    const wires: Wire[] = [
+      { id: 'w1', from: { componentId: 'src', pin: 0 }, to: { componentId: 'l', pin: 0 } },
+      { id: 'w2', from: { componentId: 'l', pin: 1 }, to: { componentId: 'r1', pin: 0 } },
+      { id: 'w3', from: { componentId: 'r1', pin: 1 }, to: { componentId: 'src', pin: 1 } },
+      diodeReversed
+        ? { id: 'w4', from: { componentId: 'src', pin: 0 }, to: { componentId: 'lamp', pin: 0 } }
+        : { id: 'w4', from: { componentId: 'src', pin: 0 }, to: { componentId: 'd', pin: 0 } },
+      diodeReversed
+        ? { id: 'w5', from: { componentId: 'lamp', pin: 1 }, to: { componentId: 'd', pin: 1 } }
+        : { id: 'w5', from: { componentId: 'd', pin: 1 }, to: { componentId: 'lamp', pin: 0 } },
+      diodeReversed
+        ? { id: 'w6', from: { componentId: 'd', pin: 0 }, to: { componentId: 'src', pin: 1 } }
+        : { id: 'w6', from: { componentId: 'lamp', pin: 1 }, to: { componentId: 'src', pin: 1 } },
+    ];
+    return { components, wires };
+  }
+
+  it('пять тем Теории: синус, действующее значение, реактивные сопротивления, фильтры, выпрямитель', () => {
+    expect(module4.theory.map((card) => card.id)).toEqual([
+      'm4-theory-sine',
+      'm4-theory-rms',
+      'm4-theory-reactance',
+      'm4-theory-filter',
+      'm4-theory-rectifier',
+    ]);
+  });
+
+  it('от 12 до 16 Вопросов обоих видов', () => {
+    const questions = questionsOf(module4);
+    expect(questions.length).toBeGreaterThanOrEqual(12);
+    expect(questions.length).toBeLessThanOrEqual(16);
+    expect(questions.some((task) => task.kind === 'choice-question')).toBe(true);
+    expect(questions.some((task) => task.kind === 'numeric-question')).toBe(true);
+  });
+
+  it('пять Схема-заданий до Экзамена и ровно один Экзамен', () => {
+    const circuits = circuitTasksOf(module4);
+    expect(circuits.filter((task) => !task.isExam).length).toBeGreaterThanOrEqual(5);
+    expect(circuits.filter((task) => !task.isExam).length).toBeLessThanOrEqual(7);
+    expect(circuits.filter((task) => task.isExam)).toHaveLength(1);
+  });
+
+  it('Экзамен объединяет темы Модуля: RL-фильтр по АЧХ и выпрямитель с лампочкой в одной схеме', () => {
+    const exam = examOf(module4);
+    if (!exam || exam.kind !== 'circuit-task') throw new Error('фикстура: в М4 нет аналогового Экзамена');
+    const used = new Set(
+      exam.conditions.flatMap((c) => (c.kind === 'component-used' ? [c.componentKind] : [])),
+    );
+    for (const kind of ['acsource', 'inductor', 'resistor', 'diode', 'lamp'] as const) {
+      expect(used.has(kind), `в Экзамене М4 не задействован ${kind}`).toBe(true);
+    }
+    expect(exam.conditions.some((c) => c.kind === 'attenuates-frequency')).toBe(true);
+    const shape = exam.conditions.find((c) => c.kind === 'rectified-output');
+    expect(shape && 'componentKind' in shape ? shape.componentKind : null).toBe('lamp');
+  });
+
+  it('катушка приходит в Палитру Модуля, лампочка М1 работает нагрузкой выпрямителя', () => {
+    expect(module4Palette).toContain('inductor');
+    expect(module4Palette).toContain('lamp');
+  });
+
+  it('RL ФНЧ решаем эталоном: катушка и резистор по умолчанию гасят 50 кГц в сотни раз', () => {
+    assertSolvable(
+      circuitTaskOf('m4-rl-lowpass'),
+      acLoop(comp('src', 'acsource', { voltage: 5, frequency: 50 }), [comp('l', 'inductor'), comp('r', 'resistor')]),
+    );
+  });
+
+  it('RL ФНЧ-ловушка: конденсатор вместо катушки верхи не режет — условие ослабления ловит', () => {
+    const verdict = evaluate(circuitTaskOf('m4-rl-lowpass'), {
+      kind: 'circuit-answer',
+      canvas: acLoop(comp('src', 'acsource', { voltage: 5, frequency: 50 }), [
+        comp('c', 'capacitor'),
+        comp('r', 'resistor'),
+      ]),
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+  });
+
+  it('RL ФВЧ решаем эталоном: на 2 Гц катушка с резистором по умолчанию оставляют ей малую долю', () => {
+    assertSolvable(
+      circuitTaskOf('m4-rl-highpass'),
+      acLoop(comp('src', 'acsource', { voltage: 5, frequency: 50 }), [comp('r', 'resistor'), comp('l', 'inductor')]),
+    );
+  });
+
+  it('RL ФВЧ-ловушка: конденсатор вместо катушки не пропускает низы — условие ловит', () => {
+    const verdict = evaluate(circuitTaskOf('m4-rl-highpass'), {
+      kind: 'circuit-answer',
+      canvas: acLoop(comp('src', 'acsource', { voltage: 5, frequency: 50 }), [
+        comp('r', 'resistor'),
+        comp('c', 'capacitor'),
+      ]),
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+  });
+
+  it('Экзамен решаем эталоном: две ветви на источнике ~, ослабление 31 раз и пик на лампочке около 4 В', () => {
+    assertSolvable(circuitTaskOf('m4-exam'), examCanvas(1000));
+  });
+
+  it('Экзамен-ловушка: диод развёрнут — лампочка видит обе полуволны, выпрямления нет', () => {
+    const verdict = evaluate(circuitTaskOf('m4-exam'), {
+      kind: 'circuit-answer',
+      canvas: examCanvas(1000, true),
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    const shape = verdict.conditionChecks.find((check) => check.condition.kind === 'rectified-output');
+    expect(shape?.text).toContain('в минус');
+  });
+
+  it('Экзамен-ловушка: резистор 10 кОм в ветви фильтра — катушка гасит лишь втрое', () => {
+    const verdict = evaluate(circuitTaskOf('m4-exam'), {
+      kind: 'circuit-answer',
+      canvas: examCanvas(10_000),
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    const attenuation = verdict.conditionChecks.find((check) => check.condition.kind === 'attenuates-frequency');
+    expect(attenuation?.passed).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
@@ -22,6 +22,13 @@ import {
 
 /** Ближайший заблокированный Модуль: с М3 в Курсе их несколько, тесты проверяют М2. */
 const firstLockedButton = () => screen.getAllByRole('button', { name: 'Заблокирован' })[0];
+
+/** Карточка Модуля на Экране Курса: Модули с одинаковым числом Заданий различаем по заголовку. */
+const moduleCardOf = (title: string): HTMLElement => {
+  const card = screen.getByRole('heading', { name: title }).closest('li');
+  if (card === null) throw new Error(`нет карточки Модуля «${title}»`);
+  return card;
+};
 
 /** Сеет Прогресс М1: все Задания пройдены, кроме перечисленных в except. */
 function seedModule1Progress(except: readonly string[] = []): void {
@@ -84,9 +91,11 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('heading', { name: 'Основы DC' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Компоненты' })).toBeInTheDocument();
 
-    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания, М2 — 20 (тикет 16)
+    // Прогресс по каждому Модулю: полный контент М1 — 22 Задания,
+    // М2 — 20 (тикет 16), М4 — 20 (тикет 22); равные объёмы различаем по карточкам
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
+    expect(within(moduleCardOf('Компоненты')).getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
+    expect(within(moduleCardOf('Переменный ток')).getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
 
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     const lockedButton = firstLockedButton();
@@ -534,7 +543,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     window.localStorage.clear();
     const secondRender = render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
+    expect(within(moduleCardOf('Переменный ток')).getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
 
     await user.upload(screen.getByLabelText('Файл импорта'), backupFile(content));
     expect(await screen.findByRole('status')).toHaveTextContent('восстановлены');
@@ -590,7 +599,7 @@ describe('Данные: экспорт, импорт и сброс', () => {
     await user.click(screen.getByRole('button', { name: 'Начать заново' }));
     await user.click(screen.getByRole('button', { name: 'Да, начать заново' }));
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
+    expect(within(moduleCardOf('Переменный ток')).getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     expect(firstLockedButton()).toBeDisabled();
 
@@ -600,6 +609,6 @@ describe('Данные: экспорт, импорт и сброс', () => {
     firstRender.unmount();
     render(<App />);
     expect(screen.getByText('Заданий пройдено: 0 из 22')).toBeInTheDocument();
-    expect(screen.getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
+    expect(within(moduleCardOf('Переменный ток')).getByText('Заданий пройдено: 0 из 20')).toBeInTheDocument();
   });
 });
