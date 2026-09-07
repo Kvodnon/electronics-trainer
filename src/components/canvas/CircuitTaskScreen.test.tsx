@@ -6,6 +6,7 @@ import type { CircuitTask } from '../../domain/task';
 import type { SymbolStandard } from '../../domain/symbols';
 import { module1Palette } from '../../content/m1';
 import { module2 } from '../../content/m2';
+import { module4 } from '../../content/m4';
 import { isExamTask } from '../../domain/course';
 import { evaluate, evaluationOfKind, type Answer } from '../../domain/evaluate';
 import { setResistance, closeSwitch, wireForwardDiode, wireRing, wireTransistorKey } from '../../testing/navigation';
@@ -854,7 +855,7 @@ describe('Осциллограф переходного режима', () => {
     const user = userEvent.setup();
     renderTask(capacitorTask());
 
-    expect(screen.getByRole('img', { name: 'График напряжения конденсатора во времени' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'График напряжения во времени' })).toBeInTheDocument();
     // пока на Холсте нет конденсатора, кривой нет — только сетка
     expect(document.querySelector('polyline.scope-curve')).toBeNull();
 
@@ -872,21 +873,21 @@ describe('Осциллограф переходного режима', () => {
     expect(document.querySelector('svg.scope-svg')).toBeNull();
   });
 
-  it('«Проиграть заряд» ведёт бегунок: показание времени растёт, конденсатор наполняется', async () => {
+  it('«Проиграть» ведёт бегунок: показание времени растёт, конденсатор наполняется', async () => {
     const user = userEvent.setup();
     renderTask(capacitorTask());
     expect(document.querySelector('.scope-playhead')).toBeNull();
     expect(document.querySelector('.symbol-capacitor-charge')).toBeNull();
 
     await assembleChargingLoop(user);
-    await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
+    await user.click(screen.getByRole('button', { name: 'Проиграть' }));
 
     expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
     expect(document.querySelector('.scope-playhead')).not.toBeNull();
     await waitFor(() => expect(document.querySelector('.symbol-capacitor-charge')).not.toBeNull());
 
     await user.click(screen.getByRole('button', { name: 'Остановить' }));
-    expect(screen.getByRole('button', { name: 'Проиграть заряд' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Проиграть' })).toBeInTheDocument();
   }, 10_000);
 
   it('ёмкость конденсатора правится в панели правки и подписывается с приставкой', async () => {
@@ -1051,5 +1052,131 @@ describe('Задания М2: транзистор, потенциометр, з
     await user.click(screen.getByRole('button', { name: 'Проверить' }));
     expect(screen.getByText('Пройдено')).toBeInTheDocument();
     expect(screen.getByText(/Зуммер звучит/)).toBeInTheDocument();
+  });
+});
+
+/**
+ * М4 (тикет 21): АЧХ фильтра строится свипом фазоров по частоте, курсор
+ * показывает амплитуду на частоте источника; осциллограф выпрямителя рисует
+ * сигнал до и после диода. Берём настоящие Задания М4 из контента.
+ */
+describe('АЧХ фильтра и выпрямитель (тикет 21)', () => {
+  function circuitTaskOf(id: string): CircuitTask {
+    const task = module4.tasks.find(
+      (candidate): candidate is CircuitTask => candidate.kind === 'circuit-task' && candidate.id === id,
+    );
+    if (task === undefined) throw new Error(`фикстура: в М4 нет задания ${id}`);
+    return task;
+  }
+
+  /** Ставит источник ~, резистор и конденсатор и замыкает их в кольцо. */
+  async function assembleFilter(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Источник ~' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Конденсатор' }));
+    await wireRing(user, ['Источник ~ 1', 'Резистор 2', 'Конденсатор 3']);
+  }
+
+  it('АЧХ: кривая и курсор на частоте источника с амплитудой и ослаблением', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m4-filter-lowpass'));
+
+    expect(screen.getByRole('img', { name: 'График АЧХ: амплитуда на выходе по частоте' })).toBeInTheDocument();
+    // пустой Холст: источника нет — АЧХ подсказывает, с чего начать
+    expect(screen.getByText(/Поставьте источник ~/)).toBeInTheDocument();
+    expect(document.querySelector('.freq-cursor-line')).toBeNull();
+
+    await assembleFilter(user);
+
+    // курсор на 50 Гц: конденсатор 100 мкФ с резистором 1 кОм режет в 31 раз
+    expect(document.querySelector('polyline.freq-curve')).not.toBeNull();
+    expect(document.querySelector('.freq-cursor-line')).not.toBeNull();
+    expect(screen.getByText(/f = 50 Гц/)).toBeInTheDocument();
+    expect(screen.getByText(/на выходе 159 мВ/)).toBeInTheDocument();
+    expect(screen.getByText(/ослабление 31,\d раза/)).toBeInTheDocument();
+  });
+
+  it('частота источника правится — курсор уезжает по кривой и показывает новую амплитуду', async () => {
+    const user = userEvent.setup();
+    renderTask(circuitTaskOf('m4-filter-lowpass'));
+    await assembleFilter(user);
+
+    expect(screen.getByText(/f = 50 Гц/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Источник ~ 1' }));
+    // у формы частоты свой «Применить», поэтому сабмит Enter'ом прямо из поля
+    const field = screen.getByLabelText('Частота, Гц');
+    await user.clear(field);
+    await user.type(field, '500{Enter}');
+
+    expect(screen.getByText(/f = 500 Гц/)).toBeInTheDocument();
+    // вдесятеро выше среза — амплитуда на конденсаторе провалилась до единиц мВ
+    expect(screen.getByText(/на выходе 15,9 мВ/)).toBeInTheDocument();
+  });
+
+  it('полный цикл: собранный фильтр проходит проверку по расчёту ослабления', async () => {
+    const user = userEvent.setup();
+    const onNext = renderCheckableTask(circuitTaskOf('m4-filter-lowpass'));
+    await assembleFilter(user);
+
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/Ослабление на частоте 50 Гц — 31,\d раза/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Дальше' }));
+    expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('осциллограф выпрямителя показывает сигнал до и после диода с легендой', async () => {
+    const user = userEvent.setup();
+    renderTask(circuitTaskOf('m4-rectifier'));
+
+    // сигнальных кривых и легенды нет, пока на Холсте не собран выпрямитель
+    expect(document.querySelector('.scope-legend')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Источник ~' }));
+    await user.click(screen.getByRole('button', { name: 'Диод' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await wireForwardDiode(user, ['Источник ~ 1', 'Диод 2', 'Резистор 3']);
+
+    expect(screen.getByText('источник ~ (до диода)', { selector: '.scope-legend-item' })).toBeInTheDocument();
+    expect(screen.getByText('нагрузка (резистор) — после диода', { selector: '.scope-legend-item' })).toBeInTheDocument();
+    expect(document.querySelectorAll('polyline.scope-curve-source')).toHaveLength(1);
+    expect(document.querySelectorAll('polyline.scope-curve-output')).toHaveLength(1);
+  });
+
+  it('полный цикл: прямой диод проходит по форме сигнала, развёрнутый ловится Разбором', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m4-rectifier'));
+
+    await user.click(screen.getByRole('button', { name: 'Источник ~' }));
+    await user.click(screen.getByRole('button', { name: 'Диод' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await wireForwardDiode(user, ['Источник ~ 1', 'Диод 2', 'Резистор 3']);
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Пройдено')).toBeInTheDocument();
+    expect(screen.getByText(/пульсации одной полярности/, { selector: 'li.circuit-condition' })).toBeInTheDocument();
+    expect(screen.getByText(/пик 4,2\d В/, { selector: 'li.circuit-condition' })).toBeInTheDocument();
+  });
+
+  it('развёрнутый диод: сигнал уходит в минус — «работает, но не по условию» с Разбором', async () => {
+    const user = userEvent.setup();
+    renderCheckableTask(circuitTaskOf('m4-rectifier'));
+
+    await user.click(screen.getByRole('button', { name: 'Источник ~' }));
+    await user.click(screen.getByRole('button', { name: 'Диод' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    // диод развёрнут: катод (вывод 2) — к нагрузке, анод — к «минусу» источника
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Источник ~ 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Диод 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Диод 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 3' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Источник ~ 1' }));
+    await user.click(screen.getByRole('button', { name: 'Проверить' }));
+
+    expect(screen.getByText('Работает, но не по условию')).toBeInTheDocument();
+    expect(screen.getByText(/уходит в минус/)).toBeInTheDocument();
   });
 });

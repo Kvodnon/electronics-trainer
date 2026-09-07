@@ -475,3 +475,112 @@ describe('диагнозы М2: ключ на транзисторе (тикет
     expect(verdict.diagnoses[0].spot).toEqual({ kind: 'component', id: 'led' });
   });
 });
+
+describe('диагнозы М4: схемы на переменном токе (тикет 21)', () => {
+  /** Задание-фильтр: ослабить 50 Гц не менее чем в 5 раз, выход на конденсаторе. */
+  const filterTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'trap-filter',
+    prompt: 'Фильтр: ослабьте частоту 50 Гц не менее чем в 5 раз.',
+    palette: ['acsource', 'resistor', 'capacitor'],
+    conditions: [
+      { kind: 'component-used', componentKind: 'acsource' },
+      { kind: 'component-used', componentKind: 'resistor' },
+      { kind: 'component-used', componentKind: 'capacitor' },
+      { kind: 'attenuates-frequency', componentKind: 'capacitor', frequency: 50, atLeast: 5 },
+    ],
+  };
+
+  function evaluateFilter(components: readonly PlacedComponent[], wires: readonly Wire[]) {
+    const verdict = evaluate(filterTask, answer(components, wires));
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    return verdict;
+  }
+
+  it('живой фильтр со слабым ослаблением — «не по условию», а не ложный «обрыв: нет батареи»', () => {
+    // резистор 10 Ом почти не режет: переменный ток течёт, схема живая
+    const verdict = evaluateFilter(
+      [
+        component('src', 'acsource', { voltage: 5, frequency: 50 }),
+        component('r', 'resistor', { resistance: 10 }),
+        component('c', 'capacitor'),
+      ],
+      [
+        wire('w1', pin('src', 0), pin('r', 0)),
+        wire('w2', pin('r', 1), pin('c', 0)),
+        wire('w3', pin('c', 1), pin('src', 1)),
+      ],
+    );
+    expect(verdict.outcome).toBe('works-not-per-task');
+    expect(verdict.diagnoses[0].kind).toBe('works-not-per-task');
+    expect(verdict.diagnoses[0].text).not.toContain('батар');
+  });
+
+  it('источник ~ есть, но контур не замкнут — обрыв без совета «поставьте батарею»', () => {
+    const verdict = evaluateFilter([component('src', 'acsource', { voltage: 5, frequency: 50 })], []);
+    expect(verdict.diagnoses[0].kind).toBe('open-circuit');
+    expect(verdict.diagnoses[0].text).not.toContain('батар');
+    expect(verdict.diagnoses[0].spot?.id).toBe('src');
+  });
+
+  it('ни батареи, ни источника ~ — прежний Диагноз «нет источника питания»', () => {
+    const verdict = evaluateFilter([component('r', 'resistor')], []);
+    expect(verdict.diagnoses[0].kind).toBe('open-circuit');
+    expect(verdict.diagnoses[0].text).toContain('нет источника');
+  });
+});
+
+describe('диагнозы М4: выпрямитель не «обрыв» (тикет 21)', () => {
+  const rectifierTask: CircuitTask = {
+    kind: 'circuit-task',
+    id: 'trap-rectifier',
+    prompt: 'Выпрямитель: пульсации одной полярности с пиком 4,5–5 В.',
+    palette: ['acsource', 'diode', 'resistor'],
+    transient: { duration: 0.1 },
+    conditions: [
+      { kind: 'component-used', componentKind: 'acsource' },
+      { kind: 'component-used', componentKind: 'diode' },
+      { kind: 'component-used', componentKind: 'resistor' },
+      { kind: 'rectified-output', componentKind: 'resistor', range: { from: 4.5, to: 5 } },
+    ],
+  };
+
+  function evaluateRectifier(wires: readonly Wire[]) {
+    const verdict = evaluate(rectifierTask, {
+      kind: 'circuit-answer',
+      canvas: {
+        components: [
+          component('src', 'acsource', { voltage: 5, frequency: 50 }),
+          component('d', 'diode'),
+          component('load', 'resistor', { resistance: 1000 }),
+        ],
+        wires,
+      },
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('ожидался вердикт Схема-задания');
+    return verdict;
+  }
+
+  it('живой выпрямитель с пиком вне границ — «не по условию», а не ложный «обрыв»', () => {
+    // диод в фазорном решении — обрыв, и линейный ток там нулевой; «работает»
+    // выпрямителю обязан ставить переходный режим, где пульсации идут
+    const verdict = evaluateRectifier([
+      wire('w1', pin('src', 0), pin('d', 0)),
+      wire('w2', pin('d', 1), pin('load', 0)),
+      wire('w3', pin('load', 1), pin('src', 1)),
+    ]);
+    expect(verdict.outcome).toBe('works-not-per-task');
+    expect(verdict.diagnoses[0].kind).toBe('works-not-per-task');
+  });
+
+  it('развёрнутый диод — тоже «не по условию» с Разбором про минус, не «обрыв»', () => {
+    const verdict = evaluateRectifier([
+      wire('w1', pin('src', 0), pin('load', 0)),
+      wire('w2', pin('load', 1), pin('d', 1)),
+      wire('w3', pin('d', 0), pin('src', 1)),
+    ]);
+    expect(verdict.diagnoses[0].kind).toBe('works-not-per-task');
+    const shape = verdict.conditionChecks.find((check) => check.condition.kind === 'rectified-output');
+    expect(shape?.text).toContain('в минус');
+  });
+});

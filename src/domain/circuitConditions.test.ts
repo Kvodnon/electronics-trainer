@@ -389,3 +389,173 @@ describe('checkConditions: измерения во времени (тикет 14
     expect(result.text).toContain('нет резистивного пути');
   });
 });
+
+describe('checkConditions: ослабление на заданной частоте (тикет 21)', () => {
+  /** ФНЧ: источник ~ — R — C, выход на конденсаторе. X_C(50 Гц) = 31,8 Ом при 100 мкФ. */
+  function lowPassCanvas(resistance: number): CanvasState {
+    return canvasOf(
+      [
+        component('src', 'acsource', { voltage: 5, frequency: 50 }),
+        component('r', 'resistor', { resistance }),
+        component('cap', 'capacitor'),
+      ],
+      [
+        wire('w1', pin('src', 0), pin('r', 0)),
+        wire('w2', pin('r', 1), pin('cap', 0)),
+        wire('w3', pin('cap', 1), pin('src', 1)),
+      ],
+    );
+  }
+
+  const attenuate = (overrides: Partial<Extract<CircuitCondition, { kind: 'attenuates-frequency' }>> = {}) => ({
+    kind: 'attenuates-frequency',
+    componentKind: 'capacitor',
+    frequency: 50,
+    atLeast: 5,
+    ...overrides,
+  } as CircuitCondition);
+
+  it('резистор 1 кОм режет 50 Гц в 31 раз: условие «не менее 5 раз» выполнено', () => {
+    const result = check(lowPassCanvas(1000), attenuate());
+    expect(result.passed).toBe(true);
+    expect(result.text).toContain('Ослабление на частоте 50 Гц');
+    expect(result.text).toContain('31,4 раза');
+    expect(result.text).toContain('не менее 5');
+    expect(result.componentId).toBe('cap');
+    expect(result.measured).toBeCloseTo(31.4, 1);
+  });
+
+  it('резистор 10 Ом фильтр не режет: ослабление около единицы — не выполнено с фактом', () => {
+    const result = check(lowPassCanvas(10), attenuate());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('вне границ');
+    expect(result.text).toMatch(/1,0\d раза/);
+  });
+
+  it('выход на резисторе ФНЧ: амплитуда почти равна источнику — ослабления нет', () => {
+    const result = check(lowPassCanvas(1000), attenuate({ componentKind: 'resistor' }));
+    expect(result.passed).toBe(false);
+    expect(result.componentId).toBe('r');
+  });
+
+  it('ослабление измеряется на частоте условия, а не на частоте источника', () => {
+    // источник стоит на 50 Гц, условие спрашивает про 500 Гц: там конденсатор
+    // режет в 314 раз — свип обязан решать схему на частоте условия
+    const result = check(lowPassCanvas(1000), attenuate({ frequency: 500, atLeast: 100 }));
+    expect(result.passed).toBe(true);
+    expect(result.text).toContain('500 Гц');
+  });
+
+  it('без источника ~ ослабление не измерить — условие честно проваливается', () => {
+    const canvas = canvasOf(
+      [component('r', 'resistor'), component('cap', 'capacitor')],
+      [wire('w1', pin('r', 1), pin('cap', 0))],
+    );
+    const result = check(canvas, attenuate());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет источника');
+  });
+
+  it('выходной Компонент не подключён к источнику — сигнала на нём нет, условия нет', () => {
+    const canvas = canvasOf(
+      [component('src', 'acsource'), component('r', 'resistor'), component('cap', 'capacitor')],
+      [wire('w1', pin('r', 0), pin('r', 1))],
+    );
+    const result = check(canvas, attenuate());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет переменного напряжения');
+  });
+});
+
+describe('checkConditions: форма выпрямленного сигнала (тикет 21)', () => {
+  /** План как у Задания-выпрямителя: пять периодов сети 50 Гц. */
+  const PLAN = { duration: 0.1 };
+
+  /** Выпрямитель: источник ~ — диод — нагрузка; forward — диод пропускает положительную полуволну. */
+  function rectifierCanvas(diode: 'forward' | 'reversed' | 'none'): CanvasState {
+    const components = [
+      component('src', 'acsource', { voltage: 5, frequency: 50 }),
+      component('load', 'resistor', { resistance: 1000 }),
+    ];
+    // вывод 0 диода — анод: прямое включение — анодом в «плюс» источника
+    const wires =
+      diode === 'forward'
+        ? [
+            wire('w1', pin('src', 0), pin('d', 0)),
+            wire('w2', pin('d', 1), pin('load', 0)),
+            wire('w3', pin('load', 1), pin('src', 1)),
+          ]
+        : diode === 'reversed'
+          ? [
+              wire('w1', pin('src', 0), pin('load', 0)),
+              wire('w2', pin('load', 1), pin('d', 1)),
+              wire('w3', pin('d', 0), pin('src', 1)),
+            ]
+          : [
+              wire('w1', pin('src', 0), pin('load', 0)),
+              wire('w3', pin('load', 1), pin('src', 1)),
+            ];
+    if (diode !== 'none') components.splice(1, 0, component('d', 'diode'));
+    return canvasOf(components, wires);
+  }
+
+  function checkRectified(canvas: CanvasState, condition: CircuitCondition) {
+    const [result] = checkConditions(canvas, solveDc(canvas), [condition], solveTransient(canvas, PLAN));
+    if (result === undefined) throw new Error('условие не вернуло результат');
+    return result;
+  }
+
+  const shape = (range = { from: 3, to: 4.6 }) =>
+    ({ kind: 'rectified-output', componentKind: 'resistor', range }) as CircuitCondition;
+
+  it('прямой диод: на нагрузке пульсации одной полярности с пиком в границах', () => {
+    const result = checkRectified(rectifierCanvas('forward'), shape());
+    expect(result.passed).toBe(true);
+    expect(result.text).toContain('пульсации одной полярности');
+    // пик чуть меньше 5 − 0,7: сетка переходного режима не попадает ровно в вершину синуса
+    expect(result.text).toMatch(/пик 4,2\d В/);
+    expect(result.componentId).toBe('load');
+    expect(result.measured).toBeCloseTo(4.27, 1);
+  });
+
+  it('диод развёрнут: сигнал уходит в минус — выпрямления нет, Диагноз называет это', () => {
+    const result = checkRectified(rectifierCanvas('reversed'), shape());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('в минус');
+    // пик по модулю тот же, что у прямого включения, — ослабление диодом честное
+    expect(result.measured).toBeCloseTo(4.27, 1);
+  });
+
+  it('без диода на нагрузке двуполярный синус — форме выпрямленного сигнал не отвечает', () => {
+    const result = checkRectified(rectifierCanvas('none'), shape());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('в минус');
+  });
+
+  it('пик вне границ условия — не выполнено с фактическим пиком', () => {
+    const result = checkRectified(rectifierCanvas('forward'), shape({ from: 4.5, to: 5 }));
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('вне границ');
+    expect(result.text).toMatch(/пик 4,2\d В/);
+  });
+
+  it('без переходного режима форму не измерить', () => {
+    const [result] = checkConditions(
+      rectifierCanvas('forward'),
+      solveDc(rectifierCanvas('forward')),
+      [shape()],
+    );
+    expect(result?.passed).toBe(false);
+    expect(result?.text).toContain('нет переходного режима');
+  });
+
+  it('нагрузки вида нет — измерять не на что', () => {
+    const canvas = canvasOf([component('src', 'acsource'), component('d', 'diode')], [
+      wire('w1', pin('src', 0), pin('d', 0)),
+      wire('w2', pin('d', 1), pin('src', 1)),
+    ]);
+    const result = checkRectified(canvas, shape());
+    expect(result.passed).toBe(false);
+    expect(result.text).toContain('нет резисторов');
+  });
+});

@@ -9,6 +9,7 @@
 import { defaultLedColor, pinCountOf, pinKey, type CanvasState, type PlacedComponent } from './canvas';
 import { formatQuantity, formatQuantityRange } from './quantity';
 import { COMPONENT_LEXIS, LED_COLOR_GENITIVE, cap } from './componentLexis';
+import { cAbs, type PhasorSolution } from './phasor';
 import { LED_MAX_CURRENT, forwardVoltageOf, readingsOfKind, type DcSolution } from './simulator';
 import type { ConditionCheck } from './circuitConditions';
 
@@ -52,12 +53,14 @@ const OPEN_CONTACT_MIN_VOLTAGE = 0.5;
  * Первичный Диагноз собранной схемы: пустой список, когда все условия
  * выполнены (и схема не «сжигает» Компонент), иначе — одна главная причина,
  * от самой фундаментальной (КЗ, обрыв) к частной (не по условию). Именно она
- * подсвечивается на схеме и объясняется ученику.
+ * подсвечивается на схеме и объясняется ученику. `phasor` — переменная
+ * составляющая: схема на источнике ~ жива, даже когда постоянный ток не течёт.
  */
 export function diagnoseCircuit(
   canvas: CanvasState,
   solution: DcSolution,
   conditionChecks: readonly ConditionCheck[],
+  phasor?: PhasorSolution | null,
 ): readonly CircuitDiagnosis[] {
   if (conditionChecks.every((check) => check.passed)) {
     // условия выполнены, но предельный ток Компонента превышен: «пройдено»
@@ -71,7 +74,7 @@ export function diagnoseCircuit(
     findReversedDiode(solution) ??
     findDiodeBelowThreshold(canvas, solution) ??
     findRatingOvercurrent(solution) ??
-    findOpenCircuit(canvas, solution) ??
+    findOpenCircuit(canvas, solution, phasor) ??
     findOvercurrent(conditionChecks) ??
     findWorksNotPerTask(conditionChecks);
   return [diagnosis];
@@ -187,18 +190,37 @@ function findDiodeBelowThreshold(canvas: CanvasState, solution: DcSolution): Cir
   return null;
 }
 
-/** Обрыв: источника нет или тока нет нигде — поиск места разрыва контура. */
-function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiagnosis | null {
+/**
+ * Обрыв: источника нет или тока нет нигде — поиск места разрыва контура.
+ * Постоянный ток для схемы на источнике ~ — не признак жизни: она живёт
+ * переменным, поэтому «живой» считается и по фазорным токам.
+ */
+function findOpenCircuit(
+  canvas: CanvasState,
+  solution: DcSolution,
+  phasor?: PhasorSolution | null,
+): CircuitDiagnosis | null {
   const batteries = readingsOfKind(solution, 'battery');
-  if (batteries.length === 0) {
+  const acSource = canvas.components.find((component) => component.kind === 'acsource');
+  if (batteries.length === 0 && acSource === undefined) {
     return {
       kind: 'open-circuit',
-      text: 'Обрыв цепи: на схеме нет источника питания — току неоткуда взяться. Поставьте батарею и замкните контур.',
+      text: 'Обрыв цепи: на схеме нет источника питания — поставьте батарею или источник ~ и замкните контур.',
       spot: null,
     };
   }
-  const anyCurrent = solution.readings.some((reading) => Math.abs(reading.current) >= DEAD_CURRENT);
+  const anyCurrent =
+    solution.readings.some((reading) => Math.abs(reading.current) >= DEAD_CURRENT) ||
+    (phasor?.readings.some((reading) => cAbs(reading.current) >= DEAD_CURRENT) ?? false);
   if (anyCurrent) return null;
+
+  // Схема с диодом на источнике ~ проводит урывками, и линейные решения —
+  // и постоянный, и фазорный — ток в ней не видят, хотя переходный режим его
+  // честно считает. «Обрывом» выпрямитель не объявляется: разбор условий
+  // назовёт настоящую причину (разворот диода, пик вне границ).
+  if (acSource !== undefined && canvas.components.some((component) => component.kind === 'diode' || component.kind === 'led')) {
+    return null;
+  }
 
   const openContact = canvas.components.find((component) => {
     if (component.kind !== 'switch' && component.kind !== 'pushbutton') return false;
@@ -222,7 +244,7 @@ function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiag
       kind: 'open-circuit',
       text:
         'Обрыв цепи: тока в схеме нет — у этого Компонента вывод остался не подключён. ' +
-        'Замкните контур Проводами от «плюса» батареи к «минусу».',
+        'Замкните контур Проводами от вывода источника через цепь Компонентов обратно к источнику.',
       spot: { kind: 'component', id: unconnected },
     };
   }
@@ -239,8 +261,13 @@ function findOpenCircuit(canvas: CanvasState, solution: DcSolution): CircuitDiag
 
   return {
     kind: 'open-circuit',
-    text: 'Обрыв цепи: тока в схеме нет — контур не замкнут. Соедините Проводами полюса батареи с цепью.',
-    spot: batteries.length > 0 ? { kind: 'component', id: batteries[0].componentId } : null,
+    text: 'Обрыв цепи: тока в схеме нет — контур не замкнут. Соедините Проводами выводы источника с цепью.',
+    spot:
+      batteries[0] !== undefined
+        ? { kind: 'component', id: batteries[0].componentId }
+        : acSource !== undefined
+          ? { kind: 'component', id: acSource.id }
+          : null,
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatQuantity, formatQuantityRange, parseQuantity } from './quantity';
+import { formatQuantity, formatQuantityRange, formatTimesRatio, parseQuantity } from './quantity';
 
 // Парсер числового Ответа — чистая функция домена: «сырая» строка ученика →
 // значение в базовой единице либо понятное сообщение об ошибке.
@@ -140,5 +140,21 @@ describe('formatQuantityRange: диапазон измерения → чита�
 
   it('нижняя граница нуля не тянет приставку вниз', () => {
     expect(formatQuantityRange(0, 0.02, 'Вт')).toBe('0–20 мВт');
+  });
+});
+
+describe('formatTimesRatio: безразмерное ослабление «во столько-то раз» (тикет 21)', () => {
+  it('целые склоняются по правилам русского счёта', () => {
+    expect(formatTimesRatio(5)).toBe('5 раз');
+    expect(formatTimesRatio(2)).toBe('2 раза');
+    expect(formatTimesRatio(31)).toBe('31 раз');
+    expect(formatTimesRatio(11)).toBe('11 раз');
+    expect(formatTimesRatio(22)).toBe('22 раза');
+    expect(formatTimesRatio(1)).toBe('1 раз');
+  });
+
+  it('дробные количества — всегда «раза»; запись с русской запятой', () => {
+    expect(formatTimesRatio(31.4)).toBe('31,4 раза');
+    expect(formatTimesRatio(1.05)).toBe('1,05 раза');
   });
 });

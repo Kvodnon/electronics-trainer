@@ -3,6 +3,7 @@ import { course } from './course';
 import { module1, module1Palette } from './m1';
 import { module2, module2Palette } from './m2';
 import { module3 } from './m3';
+import { module4, module4Palette } from './m4';
 import { isComponentKind, type CanvasState, type ComponentKind, type PlacedComponent, type Wire } from '../domain/canvas';
 import { defaultValuesOf } from '../domain/canvas';
 import { isDigitalKind, type DigitalCanvasState } from '../domain/digitalCanvas';
@@ -58,10 +59,12 @@ const MEASUREMENT_KINDS = new Set([
   'wiper-voltage',
   'rc-time-constant',
   'capacitor-voltage-at',
+  'attenuates-frequency',
+  'rectified-output',
 ]);
 
 /** Условия, которым нужен переходный режим в Задании. */
-const TRANSIENT_KINDS = new Set(['rc-time-constant', 'capacitor-voltage-at']);
+const TRANSIENT_KINDS = new Set(['rc-time-constant', 'capacitor-voltage-at', 'rectified-output']);
 
 function questionsOf(module: CourseModule): Task[] {
   // Вопросы — Задания без сборки: не аналоговые и не цифровые Схема-задания.
@@ -263,6 +266,19 @@ describe('Линтер: Схема-задания', () => {
             Number.isFinite(condition.time) && condition.time > 0 && condition.time <= task.transient.duration,
             `${where}: момент измерения напряжения должен лежать внутри плана`,
           ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('условие об ослаблении частоты здраво: частота и порог положительны, порог больше единицы', () => {
+    for (const module of course.modules) {
+      for (const task of circuitTasksOf(module)) {
+        for (const condition of task.conditions) {
+          if (condition.kind !== 'attenuates-frequency') continue;
+          const where = `Задание ${task.id}, условие attenuates-frequency`;
+          expect(Number.isFinite(condition.frequency) && condition.frequency > 0, where).toBe(true);
+          expect(Number.isFinite(condition.atLeast) && condition.atLeast > 1, where).toBe(true);
         }
       }
     }
@@ -942,5 +958,131 @@ describe('Схема-задания М3 решаемы: эталон-сборк�
   it('Экзамен: перепутанные местами Индикаторы не проходят — порядок выходов значим', () => {
     const verdict = verdictOf(logicTaskOf('m3-exam'), fullAdderFromGates(true));
     expect(verdict.outcome).toBe('incorrect');
+  });
+});
+
+describe('Объём контента М4 (тикет 21): задания фильтра и выпрямителя', () => {
+  /** Последовательный контур с источником ~: «плюс» источника — в вывод 0 первого Компонента. */
+  function acLoop(source: PlacedComponent, chain: readonly PlacedComponent[]): CanvasState {
+    const wires: Wire[] = [
+      { id: 'w1', from: { componentId: source.id, pin: 0 }, to: { componentId: chain[0].id, pin: 0 } },
+    ];
+    chain.forEach((component, index) => {
+      const last = index + 1 === chain.length;
+      wires.push({
+        id: `w${wires.length + 1}`,
+        from: { componentId: component.id, pin: 1 },
+        to: last
+          ? { componentId: source.id, pin: 1 }
+          : { componentId: chain[index + 1].id, pin: 0 },
+      });
+    });
+    return { components: [source, ...chain], wires };
+  }
+
+  function circuitTaskOf(id: string): CircuitTask {
+    return circuitTaskIn(module4, id);
+  }
+
+  it('три Схема-задания нарастают от фильтров к выпрямителю; Экзамена до тикета 22 нет', () => {
+    expect(circuitTasksOf(module4).map((task) => task.id)).toEqual([
+      'm4-filter-lowpass',
+      'm4-filter-highpass',
+      'm4-rectifier',
+    ]);
+    expect(module4.tasks.some(isExamTask)).toBe(false);
+  });
+
+  it('оба новых условия-измерения в работе: ослабление по АЧХ и форма выпрямленного', () => {
+    const kinds = new Set(
+      circuitTasksOf(module4).flatMap((task) => task.conditions.map((condition) => condition.kind)),
+    );
+    expect(kinds.has('attenuates-frequency')).toBe(true);
+    expect(kinds.has('rectified-output')).toBe(true);
+  });
+
+  it('объявленная Палитра М4 совпадает с объединением Палитр его Заданий', () => {
+    expect(modulePaletteOf(module4)).toEqual(module4Palette);
+  });
+
+  it('ФНЧ решаем эталоном: источник, резистор и конденсатор по умолчанию режут 50 Гц в десятки раз', () => {
+    assertSolvable(
+      circuitTaskOf('m4-filter-lowpass'),
+      acLoop(
+        comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+        [comp('r', 'resistor'), comp('c', 'capacitor')],
+      ),
+    );
+  });
+
+  it('ФНЧ-ловушка: резистор 10 Ом фильтр не режет — условие ослабления ловит', () => {
+    const verdict = evaluate(
+      circuitTaskOf('m4-filter-lowpass'),
+      {
+        kind: 'circuit-answer',
+        canvas: acLoop(
+          comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+          [comp('r', 'resistor', { resistance: 10 }), comp('c', 'capacitor')],
+        ),
+      },
+    );
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+  });
+
+  it('ФВЧ решается с ёмкостью 10 мкФ: на 2 Гц резистор получает в восемь раз меньше источника', () => {
+    assertSolvable(
+      circuitTaskOf('m4-filter-highpass'),
+      acLoop(
+        comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+        [comp('c', 'capacitor', { capacitance: 10e-6 }), comp('r', 'resistor')],
+      ),
+    );
+  });
+
+  it('ФВЧ-ловушка: ёмкость по умолчанию (100 мкФ) низы не режет — решение не проходит', () => {
+    const verdict = evaluate(
+      circuitTaskOf('m4-filter-highpass'),
+      {
+        kind: 'circuit-answer',
+        canvas: acLoop(
+          comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+          [comp('c', 'capacitor'), comp('r', 'resistor')],
+        ),
+      },
+    );
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+  });
+
+  it('Выпрямитель решаем эталоном: источник — диод — нагрузка, пульсации от нуля вверх', () => {
+    assertSolvable(
+      circuitTaskOf('m4-rectifier'),
+      acLoop(
+        comp('src', 'acsource', { voltage: 5, frequency: 50 }),
+        [comp('d', 'diode'), comp('load', 'resistor', { resistance: 1000 })],
+      ),
+    );
+  });
+
+  it('Выпрямитель-ловушка: диод развёрнут — сигнал идёт в минус, форма не та', () => {
+    const source = comp('src', 'acsource', { voltage: 5, frequency: 50 });
+    const diode = comp('d', 'diode');
+    const load = comp('load', 'resistor', { resistance: 1000 });
+    const verdict = evaluate(circuitTaskOf('m4-rectifier'), {
+      kind: 'circuit-answer',
+      canvas: {
+        components: [source, diode, load],
+        wires: [
+          { id: 'w1', from: { componentId: 'src', pin: 0 }, to: { componentId: 'load', pin: 0 } },
+          { id: 'w2', from: { componentId: 'load', pin: 1 }, to: { componentId: 'd', pin: 1 } },
+          { id: 'w3', from: { componentId: 'd', pin: 0 }, to: { componentId: 'src', pin: 1 } },
+        ],
+      },
+    });
+    if (verdict.kind !== 'circuit-task') throw new Error('фикстура: ожидался вердикт Схема-задания');
+    expect(verdict.outcome).not.toBe('correct');
+    const shape = verdict.conditionChecks.find((check) => check.condition.kind === 'rectified-output');
+    expect(shape?.text).toContain('в минус');
   });
 });

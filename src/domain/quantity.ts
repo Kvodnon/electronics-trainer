@@ -169,3 +169,18 @@ export function formatQuantityRange(from: number, to: number, unit: QuantityUnit
   const format = (value: number) => String(Number((value / step.factor).toPrecision(3))).replace('.', ',');
   return `${format(from)}–${format(to)} ${step.prefix}${unit}`;
 }
+
+/**
+ * Безразмерное ослабление «во столько-то раз»: 5 → «5 раз», 2 → «2 раза»,
+ * 31 → «31 раз», дробное — всегда «раза» («31,4 раза»). Слово выбирается по
+ * правилам русского счёта: дробные количества склоняются как «раза».
+ */
+export function formatTimesRatio(value: number): string {
+  const rounded = Number(value.toPrecision(3));
+  const number = String(rounded).replace('.', ',');
+  if (!Number.isInteger(rounded)) return `${number} раза`;
+  const last = Math.abs(rounded) % 10;
+  const tens = Math.abs(rounded) % 100;
+  const word = last === 1 && tens !== 11 ? 'раз' : last >= 2 && last <= 4 && (tens < 12 || tens > 14) ? 'раза' : 'раз';
+  return `${number} ${word}`;
+}

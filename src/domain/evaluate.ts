@@ -209,7 +209,7 @@ function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskE
   // несошедшаяся схема — прежнее поведение решателя: ошибка проверки, не вердикт
   if (solution === null) throw new Error('Сингулярная матрица узловых уравнений');
   const conditionChecks = checkConditions(answer.canvas, solution.dc, task.conditions, transient);
-  const diagnoses = diagnoseCircuit(answer.canvas, solution.dc, conditionChecks);
+  const diagnoses = diagnoseCircuit(answer.canvas, solution.dc, conditionChecks, solution.phasor);
   const outcome: CircuitOutcome = conditionChecks.every((check) => check.passed)
     ? 'correct'
     : diagnoses[0]?.kind === 'works-not-per-task'

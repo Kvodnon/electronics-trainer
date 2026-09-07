@@ -91,8 +91,8 @@ describe('Экран Курса', () => {
     expect(screen.getByRole('button', { name: 'Начать' })).toBeEnabled();
     const lockedButton = firstLockedButton();
     expect(lockedButton).toBeDisabled();
-    // оба Модуля после непройденной М1 держит она же — ближайшая незакрытая
-    expect(screen.getAllByText('Откроется после Модуля «Основы DC»')).toHaveLength(2);
+    // все Модули после непройденной М1 держит она же — ближайшая незакрытая
+    expect(screen.getAllByText('Откроется после Модуля «Основы DC»')).toHaveLength(3);
   });
 });
 

@@ -11,7 +11,9 @@ import { readingsByComponent, wireCurrents } from '../../domain/simulator';
 import { useLiveCircuit, useMultimeter } from './liveCircuit';
 import { MultimeterControls, StandardControls } from './ToolbarControls';
 import { CanvasEditor, type CanvasOverlay } from './CanvasEditor';
-import { OscilloscopePanel, useTransientPlayback } from './OscilloscopePanel';
+import { OscilloscopePanel, useTransientPlayback, type ScopeSignalCurve } from './OscilloscopePanel';
+import { FrequencyResponsePanel } from './FrequencyResponsePanel';
+import { componentTitles } from './CanvasSymbols';
 
 interface CircuitTaskScreenProps {
   readonly task: CircuitTask;
@@ -35,7 +37,9 @@ interface CircuitTaskScreenProps {
  * переключатель меняет только отрисовку, собранная схема остаётся как была.
  * Задание с переходным режимом дополнительно показывает Осциллограф:
  * кривая напряжения во времени перестраивается вместе со схемой, а
- * «Проиграть заряд» наполняет конденсатор на Холсте под бегунок.
+ * «Проиграть» ведёт бегунок по кривой и наполняет конденсатор на Холсте.
+ * У выпрямителя осциллограф рисует сигнал до и после диода, у фильтра
+ * под Холстом строится АЧХ свипом фазоров с курсором на частоте источника.
  */
 export function CircuitTaskScreen({
   task,
@@ -64,6 +68,46 @@ export function CircuitTaskScreen({
     }
   }, [history.present, task.transient]);
   const playback = useTransientPlayback(transient);
+
+  /**
+   * Сигнальные кривые выпрямителя (тикет 21): вход — источник ~ («до диода»),
+   * выход — первый Компонент вида из условия формы («после диода»; та же
+   * конвенция первого Компонента вида, что у кривой АЧХ). Ложатся поверх
+   * осциллографа с легендой; без выпрямительного условия их нет.
+   */
+  const signalCurves = useMemo<readonly ScopeSignalCurve[]>(() => {
+    if (transient === null) return [];
+    const shape = task.conditions.find((condition) => condition.kind === 'rectified-output');
+    if (shape === undefined || shape.kind !== 'rectified-output') return [];
+    const curves: ScopeSignalCurve[] = [];
+    const source = history.present.components.find((component) => component.kind === 'acsource');
+    const sourceCurve = source !== undefined ? transient.componentVoltages.get(source.id) : undefined;
+    if (source !== undefined && sourceCurve !== undefined) {
+      curves.push({
+        key: `${source.id}:source`,
+        label: 'источник ~ (до диода)',
+        values: sourceCurve,
+        className: 'scope-curve-source',
+      });
+    }
+    const load = history.present.components.find((component) => component.kind === shape.componentKind);
+    const loadCurve = load !== undefined ? transient.componentVoltages.get(load.id) : undefined;
+    if (load !== undefined && loadCurve !== undefined) {
+      curves.push({
+        key: `${load.id}:output`,
+        label: `нагрузка (${componentTitles[load.kind].toLowerCase()}) — после диода`,
+        values: loadCurve,
+        className: 'scope-curve-output',
+      });
+    }
+    return curves;
+  }, [transient, task.conditions, history.present]);
+
+  /**
+   * Фильтрное условие Задания (тикет 21): по нему строится панель АЧХ —
+   * свип фазоров по частоте с курсором на частоте источника.
+   */
+  const filterCondition = task.conditions.find((condition) => condition.kind === 'attenuates-frequency');
 
   /** Оверлей токов и напряжений — по решению, на котором построен вердикт.
    * В схемах с источником ~ поверх постоянных значений показываются амплитуды. */
@@ -131,7 +175,10 @@ export function CircuitTaskScreen({
         }
       />
       {transient !== null && task.transient !== undefined && (
-        <OscilloscopePanel plan={task.transient} transient={transient} playback={playback} />
+        <OscilloscopePanel plan={task.transient} transient={transient} playback={playback} signalCurves={signalCurves} />
+      )}
+      {filterCondition !== undefined && filterCondition.kind === 'attenuates-frequency' && (
+        <FrequencyResponsePanel canvas={history.present} outputKind={filterCondition.componentKind} />
       )}
       {shownEvaluation !== null && (
         <CircuitVerdict evaluation={shownEvaluation} onNext={onNext} />

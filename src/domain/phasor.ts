@@ -498,3 +498,59 @@ export function acAmplitudesOf(canvas: CanvasState, solution: CircuitSolution): 
     wireAmplitudes: new Map(wireAmplitudes.map((entry) => [entry.wireId, entry.current])),
   };
 }
+
+/**
+ * АЧХ (тикет 21): амплитудно-частотная характеристика строится свипом
+ * фазорных решений — на каждой частоте сетки схема решается заново, и
+ * снимается амплитуда (пик) напряжения на выходном Компоненте. Выход —
+ * первый Компонент заданного вида на Холсте (та же конвенция «первого
+ * конденсатора», что у осциллографа); Компонента вида нет — амплитуда
+ * нулевая, решение на частоте не сошлось — точка пропускается.
+ */
+export interface FrequencyResponsePoint {
+  /** Частота, Гц. */
+  readonly frequency: number;
+  /** Амплитуда (пик) напряжения на выходном Компоненте, В. */
+  readonly amplitude: number;
+}
+
+/**
+ * Стандартная сетка АЧХ: логарифм по частоте, 10 точек на декаду,
+ * от 1 Гц до 100 кГц — фильтры М4 с любыми учебными номиналами попадают
+ * в график вместе со своей частотой среза.
+ */
+export const RESPONSE_SWEEP_HZ: readonly number[] = Array.from(
+  { length: 51 },
+  (_, index) => 10 ** (index / 10),
+);
+
+/** Амплитуда на выходе схемы на одной частоте; источника ~ нет — ноль. */
+export function frequencyResponseOf(
+  canvas: CanvasState,
+  outputKind: ComponentKind,
+  frequencies: readonly number[],
+  options: CircuitSolveOptions = {},
+): readonly FrequencyResponsePoint[] {
+  const output = canvas.components.find((component) => component.kind === outputKind);
+  const points: FrequencyResponsePoint[] = [];
+  for (const frequency of frequencies) {
+    if (output === undefined) {
+      points.push({ frequency, amplitude: 0 });
+      continue;
+    }
+    const phasor = solvePhasor(canvas, frequency, options);
+    if (phasor === null) continue;
+    const reading = phasor.readings.find((candidate) => candidate.componentId === output.id);
+    points.push({ frequency, amplitude: reading === undefined ? 0 : cAbs(reading.voltage) });
+  }
+  return points;
+}
+
+/** АЧХ по стандартной логарифмической сетке — готовая кривая для графика. */
+export function amplitudeResponseOf(
+  canvas: CanvasState,
+  outputKind: ComponentKind,
+  options: CircuitSolveOptions = {},
+): readonly FrequencyResponsePoint[] {
+  return frequencyResponseOf(canvas, outputKind, RESPONSE_SWEEP_HZ, options);
+}

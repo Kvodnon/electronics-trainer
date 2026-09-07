@@ -122,7 +122,7 @@ describe('Осциллограф в Песочнице (тикет 14)', () => {
     expect(document.querySelectorAll('polyline.scope-curve')).toHaveLength(1);
     expect(document.querySelector('.scope-toggle-mark')).not.toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Проиграть заряд' }));
+    await user.click(screen.getByRole('button', { name: 'Проиграть' }));
     expect(screen.getByText(/t = 0 с · U = 0 В/)).toBeInTheDocument();
   });
 });

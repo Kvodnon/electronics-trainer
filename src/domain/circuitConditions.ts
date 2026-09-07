@@ -4,11 +4,12 @@
  * Эквивалентные схемы проходят одинаково — сравнивается физика, не эталон.
  * Чистый TypeScript без DOM.
  */
-import { pinKey, type CanvasState } from './canvas';
+import { pinKey, defaultAcAmplitude, type CanvasState } from './canvas';
 import type { CircuitCondition } from './task';
-import { formatQuantity, formatQuantityRange, type QuantityUnit } from './quantity';
+import { formatQuantity, formatQuantityRange, formatTimesRatio, type QuantityUnit } from './quantity';
 import { COMPONENT_LEXIS, cap, type ComponentLexis } from './componentLexis';
-import { voltageAt, type TransientSolution } from './transient';
+import { cAbs, solvePhasor } from './phasor';
+import { toggledContactStates, voltageAt, type TransientSolution } from './transient';
 import {
   BUZZER_SOUND_CURRENT,
   LAMP_LIT_POWER,
@@ -63,6 +64,10 @@ export function checkConditions(
         return checkTimeConstant(transient, condition);
       case 'capacitor-voltage-at':
         return checkVoltageAtMoment(transient, condition);
+      case 'attenuates-frequency':
+        return checkAttenuation(canvas, transient, condition);
+      case 'rectified-output':
+        return checkRectifiedOutput(canvas, transient, condition);
     }
   });
 }
@@ -395,5 +400,145 @@ function checkVoltageAtMoment(
     } условия (${bounds}).`,
     componentId: candidate.id,
     measured: candidate.voltage,
+  };
+}
+
+/**
+ * Измерения М4: частотные (АЧХ) и форма выпрямленного сигнала. Ослабление
+ * считается фазорным решением на частоте условия — не на частоте источника;
+ * форма выпрямленного — по установившейся половине кривой переходного режима.
+ */
+
+/** Ниже этой амплитуды на выходе сигнала нет: Компонент не в острове источника. */
+const ATTENUATION_SIGNAL_FLOOR = 1e-9;
+
+/**
+ * Ослабление на заданной частоте: ЭДС источника ~ / амплитуда на выходе.
+ * Годится любой Компонент вида, чьё ослабление дошло до границы; Компоненты
+ * без переменного напряжения (не подключены к источнику) не кандидатуются —
+ * иначе висящий в воздухе конденсатор «ослаблял бы» бесконечно.
+ */
+function checkAttenuation(
+  canvas: CanvasState,
+  transient: TransientSolution | undefined,
+  condition: Extract<CircuitCondition, { kind: 'attenuates-frequency' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const frequency = formatQuantity(condition.frequency, 'Гц');
+  const source = canvas.components.find((component) => component.kind === 'acsource');
+  if (source === undefined) {
+    return {
+      condition,
+      passed: false,
+      text: `Ослабление на частоте ${frequency} не измерено: на схеме нет источника ~.`,
+    };
+  }
+  const emf = source.voltage ?? defaultAcAmplitude;
+  // коммутаторы стоят там же, где течёт переходный режим Задания
+  const contactStates = transient !== undefined ? toggledContactStates(canvas) : undefined;
+  const phasor = solvePhasor(canvas, condition.frequency, { contactStates });
+  if (phasor === null) {
+    return {
+      condition,
+      passed: false,
+      text: `Ослабление на частоте ${frequency} не измерено: схема на этой частоте не решается.`,
+    };
+  }
+
+  const measured = phasor.readings
+    .filter((reading) => reading.kind === condition.componentKind)
+    .map((reading) => ({ id: reading.componentId, amplitude: cAbs(reading.voltage) }))
+    .filter((entry) => entry.amplitude > ATTENUATION_SIGNAL_FLOOR)
+    .map((entry) => ({ ...entry, ratio: emf / entry.amplitude }));
+  if (measured.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `На ${lexis.genitivePlural} нет переменного напряжения — выход фильтра не подключён к источнику ~.`,
+    };
+  }
+
+  const range = { from: condition.atLeast, to: Number.POSITIVE_INFINITY };
+  const inRange = (entry: { ratio: number }) => entry.ratio >= condition.atLeast;
+  const candidate = pickCandidate(measured, (entry) => entry.ratio, range);
+  return {
+    condition,
+    passed: measured.some(inRange),
+    text: `Ослабление на частоте ${frequency} — ${formatTimesRatio(candidate.ratio)} (амплитуда на ${
+      lexis.prepositional
+    } ${formatQuantity(candidate.amplitude, 'В')} при амплитуде источника ${formatQuantity(emf, 'В')}), ${
+      inRange(candidate) ? 'в границах' : 'вне границ'
+    } условия (не менее ${formatTimesRatio(condition.atLeast)}).`,
+    componentId: candidate.id,
+    measured: candidate.ratio,
+  };
+}
+
+/**
+ * Доля пика, на которую выпрямленным пульсациям разрешено уходить в минус:
+ * у запертого диода остаётся микроскопная утечка сквозь модель разомкнутого
+ * контакта — форма «одной полярности» её прощает.
+ */
+const UNIPOLAR_TOLERANCE = 0.05;
+
+/**
+ * Форма выпрямленного сигнала: на нагрузке — пульсации одной полярности
+ * (от нуля вверх) с пиком в границах. Пик — наибольшая пульсация по модулю
+ * установившейся половины плана (начальные процессы к ней затухают);
+ * уход в минус значит, что через нагрузку проходят обе полуволны.
+ */
+function checkRectifiedOutput(
+  canvas: CanvasState,
+  transient: TransientSolution | undefined,
+  condition: Extract<CircuitCondition, { kind: 'rectified-output' }>,
+): ConditionCheck {
+  const lexis = COMPONENT_LEXIS[condition.componentKind];
+  const bounds = formatQuantityRange(condition.range.from, condition.range.to, 'В');
+  if (transient === undefined) {
+    return {
+      condition,
+      passed: false,
+      text: `Форма выходного сигнала не измерена: в Задании нет переходного режима.`,
+    };
+  }
+  const loadIds = canvas.components
+    .filter((component) => component.kind === condition.componentKind)
+    .map((component) => component.id);
+  if (loadIds.length === 0) {
+    return {
+      condition,
+      passed: false,
+      text: `Форма выходного сигнала не измерена: на схеме нет ${lexis.genitivePlural}.`,
+    };
+  }
+
+  const steadyFrom = Math.floor(transient.times.length / 2);
+  const measured = loadIds.map((id) => {
+    const steady = (transient.componentVoltages.get(id) ?? []).slice(steadyFrom);
+    const peak = steady.length > 0 ? Math.max(...steady.map(Math.abs)) : 0;
+    const min = steady.length > 0 ? Math.min(...steady) : 0;
+    return { id, peak, min };
+  });
+  const inRange = (entry: { peak: number }) => entry.peak >= condition.range.from && entry.peak <= condition.range.to;
+  const candidate = pickCandidate(measured, (entry) => entry.peak, condition.range);
+
+  if (candidate.min < -UNIPOLAR_TOLERANCE * candidate.peak) {
+    return {
+      condition,
+      passed: false,
+      text: `Выход выпрямителя уходит в минус до ${formatQuantity(candidate.min, 'В')}: сигнал двуполярный — ` +
+        'выпрямления нет, через нагрузку проходят обе полуволны. Проверьте диод.',
+      componentId: candidate.id,
+      measured: candidate.peak,
+    };
+  }
+  return {
+    condition,
+    passed: inRange(candidate),
+    text: `Выход выпрямителя — пульсации одной полярности, пик ${formatQuantity(candidate.peak, 'В')}, ${
+      inRange(candidate) ? 'в границах' : 'вне границ'
+    } условия (${bounds}).`,
+    componentId: candidate.id,
+    measured: candidate.peak,
   };
 }

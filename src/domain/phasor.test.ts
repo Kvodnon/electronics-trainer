@@ -5,9 +5,12 @@ import { isLampLit } from './simulator';
 import {
   acAmplitudesOf,
   acFrequencyOf,
+  amplitudeResponseOf,
   effectiveReadings,
+  frequencyResponseOf,
   phaseDegOf,
   phasorReading,
+  RESPONSE_SWEEP_HZ,
   rmsOf,
   solveCircuit,
   solvePhasor,
@@ -249,5 +252,82 @@ describe('acAmplitudesOf: амплитуды для оверлея', () => {
       loopWires('b', ['r']),
     );
     expect(acAmplitudesOf(canvas, solveCircuit(canvas)!)).toBeNull();
+  });
+});
+
+describe('АЧХ: свип фазоров по частоте (тикет 21)', () => {
+  /** ФНЧ: источник ~ 10 В — R 1 кОм — C 100 мкФ, выход на конденсаторе. */
+  function lowPass(): CanvasState {
+    return seriesLoop([
+      component('r', 'resistor', { resistance: 1000 }),
+      component('c', 'capacitor', { capacitance: 100e-6 }),
+    ]);
+  }
+
+  /** Частота среза ФНЧ: fc = 1/(2πRC) ≈ 1,5915 Гц. */
+  const CUT_OFF = 1 / (2 * Math.PI * 1000 * 100e-6);
+
+  it('на частоте среза амплитуда на конденсаторе A/√2, на десятикратной — ~A/10', () => {
+    const response = frequencyResponseOf(lowPass(), 'capacitor', [CUT_OFF, 10 * CUT_OFF]);
+
+    expect(response).toHaveLength(2);
+    expectCloseTo(response[0].amplitude, 10 / Math.SQRT2);
+    expectCloseTo(response[1].amplitude, 10 / Math.sqrt(101));
+  });
+
+  it('ФВЧ: выход на резисторе — амплитуда с частотой растёт, на низкой частоте режется', () => {
+    const highPass = seriesLoop([
+      component('c', 'capacitor', { capacitance: 100e-6 }),
+      component('r', 'resistor', { resistance: 1000 }),
+    ]);
+
+    const response = frequencyResponseOf(highPass, 'resistor', [CUT_OFF / 10, CUT_OFF]);
+
+    expectCloseTo(response[0].amplitude, 10 / Math.sqrt(101));
+    expectCloseTo(response[1].amplitude, 10 / Math.SQRT2);
+  });
+
+  it('стандартная сетка АЧХ — логарифм, 10 точек на декаду, от 1 Гц до 100 кГц', () => {
+    expect(RESPONSE_SWEEP_HZ).toHaveLength(51);
+    expect(RESPONSE_SWEEP_HZ[0]).toBeCloseTo(1);
+    expect(RESPONSE_SWEEP_HZ[RESPONSE_SWEEP_HZ.length - 1]).toBeCloseTo(100_000);
+    for (let index = 1; index < RESPONSE_SWEEP_HZ.length; index += 1) {
+      expect(RESPONSE_SWEEP_HZ[index] / RESPONSE_SWEEP_HZ[index - 1]).toBeCloseTo(10 ** 0.1);
+    }
+  });
+
+  it('amplitudeResponseOf проходит стандартную сетку: ФНЧ монотонно спадает после среза', () => {
+    const response = amplitudeResponseOf(lowPass(), 'capacitor');
+
+    expect(response).toHaveLength(RESPONSE_SWEEP_HZ.length);
+    for (let index = 0; index < response.length; index += 1) {
+      expect(response[index].frequency).toBeCloseTo(RESPONSE_SWEEP_HZ[index]);
+    }
+    // 1 Гц — уже рядом со срезом 1,59 Гц, а дальше кривая только спадает
+    expectCloseTo(response[0].amplitude, 10 / Math.sqrt(1 + (1 / CUT_OFF) ** 2));
+    for (let index = 1; index < response.length; index += 1) {
+      expect(response[index].amplitude).toBeLessThanOrEqual(response[index - 1].amplitude + 1e-9);
+    }
+  });
+
+  it('выходом становится первый Компонент вида на Холсте', () => {
+    const twoResistors = seriesLoop([
+      component('r1', 'resistor', { resistance: 1000 }),
+      component('r2', 'resistor', { resistance: 3000 }),
+    ]);
+
+    const response = frequencyResponseOf(twoResistors, 'resistor', [10]);
+    // делитель 1 кОм + 3 кОм: первому резистору достаётся четверть ЭДС —
+    // берётся он, а не второй (на котором 7,5 В)
+    expectCloseTo(response[0].amplitude, 2.5);
+  });
+
+  it('без источника ~ или без Компонента вида выход — нулевые амплитуды', () => {
+    const sourceless = canvasOf(
+      [component('r', 'resistor'), component('c', 'capacitor')],
+      [{ id: 'w1', from: { componentId: 'r', pin: 1 }, to: { componentId: 'c', pin: 0 } }],
+    );
+    expect(amplitudeResponseOf(sourceless, 'capacitor').every((point) => point.amplitude === 0)).toBe(true);
+    expect(amplitudeResponseOf(lowPass(), 'inductor').every((point) => point.amplitude === 0)).toBe(true);
   });
 });
