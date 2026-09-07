@@ -29,9 +29,18 @@
  * решении его ветвь разомкнута, а всё установившееся напряжение остаётся
  * на нём. Переходный режим (`solveTransient`) решает схему шагами во времени,
  * подменяя конденсатор компаньоном интегрирования через DcSolveOptions.
+ *
+ * Источник ~ и катушка (тикет 20): источник переменного напряжения — ЭДС с
+ * малым внутренним сопротивлением, как у батареи; его мгновенная ЭДС приходит
+ * через DcSolveOptions.sourceEmfs (переходный режим подставляет синус каждого
+ * шага), без опции источник погашен — так суперпозиция выделяет постоянную
+ * составляющую. Катушка для постоянного тока — почти провод, а в переходном
+ * режиме решается компаньоном: сопротивлением 2L/Δt с ЭДС −(i·2L/Δt + v),
+ * что отвечает трапецеидальному интегрированию тока через неё.
  */
 import {
   defaultCapacitance,
+  defaultInductance,
   defaultLedColor,
   defaultPotentiometerWiper,
   pinKey,
@@ -40,9 +49,12 @@ import {
   type LedColor,
   type PlacedComponent,
 } from './canvas';
+import { buildTopology, BASE_PIN, COLLECTOR_PIN, type TopologyBranch } from './topology';
 
 /** Внутреннее сопротивление батареи, Ом (поведенческая модель М1). */
 export const BATTERY_INTERNAL_RESISTANCE = 0.1;
+/** Внутреннее сопротивление источника ~, Ом: та же поведенческая модель. */
+export const AC_SOURCE_INTERNAL_RESISTANCE = 0.1;
 /** Замкнутый контакт выключателя/ключа, Ом. */
 export const CLOSED_CONTACT_RESISTANCE = 1e-3;
 /** Разомкнутый контакт, Ом: обрыв без вырождения матрицы. */
@@ -97,8 +109,19 @@ export interface CapacitorState {
 }
 
 /**
+ * Состояние катушки-компаньона: ток (А, от вывода 0 к выводу 1) и напряжение
+ * (В) на предыдущем шаге интегрирования. У конденсатора состояние «держит»
+ * напряжение, у катушки — ток: скачком не меняется ни тот, ни другой.
+ */
+export interface InductorState {
+  readonly current: number;
+  readonly voltage: number;
+}
+
+/**
  * Переопределения моделей для переходного режима. Обычное решение solveDc
- * (без опций) не меняется: конденсатор — разрыв, коммутаторы — как нарисованы.
+ * (без опций) не меняется: конденсатор — разрыв, катушка — провод,
+ * источник ~ погашен, коммутаторы — как нарисованы.
  */
 export interface DcSolveOptions {
   /** Состояние коммутаторов: id → замкнут? Нет записи — нарисованное состояние. */
@@ -109,8 +132,21 @@ export interface DcSolveOptions {
    * v + i·Δt/2C и сопротивлением Δt/2C).
    */
   readonly capacitorStates?: ReadonlyMap<string, CapacitorState>;
-  /** Шаг интегрирования, с — вместе с ёмкостью задаёт компаньона. */
+  /**
+   * Состояние катушек: id → ток и напряжение шага. Задано — катушка решается
+   * компаньоном трапецеидального интегрирования (сопротивление 2L/Δt,
+   * ЭДС −(i·2L/Δt + v)).
+   */
+  readonly inductorStates?: ReadonlyMap<string, InductorState>;
+  /** Шаг интегрирования, с — вместе с ёмкостью и индуктивностью задаёт компаньонов. */
   readonly timeStep?: number;
+  /**
+   * Мгновенные ЭДС источников ~: id → вольты в этот момент времени. Переходный
+   * режим подставляет синус каждого шага; нет записи — источник погашен
+   * (остаётся только внутреннее сопротивление), так работает DC-проход
+   * суперпозиции.
+   */
+  readonly sourceEmfs?: ReadonlyMap<string, number>;
   /**
    * Проба Thevenin: конденсатор с этим id заменяется источником тока 1 А,
    * источники ЭДС гасятся — напряжение на пробе численно равно сопротивлению
@@ -123,10 +159,17 @@ export interface DcSolveOptions {
 const THEVENIN_PROBE_CURRENT = 1;
 /** Напряжение на конденсаторе-компаньоне, ниже которого остров не «живой». */
 const ENERGIZED_VOLTAGE = 1e-9;
+/** Ток катушки-компаньона, ниже которого остров от неё не «живой». */
+const ENERGIZED_CURRENT = 1e-9;
 
 /** Сопротивление компаньона конденсатора на шаге интегрирования, Ом (Δt/2C). */
 function companionResistance(timeStep: number, capacitance: number): number {
   return timeStep / (2 * capacitance);
+}
+
+/** Сопротивление компаньона катушки на шаге интегрирования, Ом (2L/Δt). */
+function inductorCompanionResistance(timeStep: number, inductance: number): number {
+  return (2 * inductance) / timeStep;
 }
 
 /**
@@ -192,7 +235,17 @@ export interface WireCurrent {
   readonly current: number | null;
 }
 
-export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonly WireCurrent[] {
+/**
+ * Токи Проводов по токам выводов Компонентов. Провод — часть узла Симулятора,
+ * его ток восстанавливается по ветви Компонента на конце Провода. Это честно,
+ * только когда на каждом из двух выводов висит единственный Провод: при
+ * параллельных Проводах одного вывода ток между ними не определяется —
+ * значение null. Общая фигура для постоянного и фазорного режимов.
+ */
+export function wireCurrentsFrom(
+  canvas: CanvasState,
+  pinCurrentOf: (componentId: string, pin: number) => number | null,
+): readonly WireCurrent[] {
   const wiresPerPin = new Map<string, number>();
   const touch = (ref: { readonly componentId: string; readonly pin: number }): void => {
     const key = pinKey(ref.componentId, ref.pin);
@@ -210,12 +263,18 @@ export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonl
     if (component === undefined || !alone(wire.from) || !alone(wire.to)) {
       return { wireId: wire.id, current: null };
     }
-    const reading = solution.readings.find((candidate) => candidate.componentId === wire.from.componentId);
-    if (reading === undefined) return { wireId: wire.id, current: null };
     // Ток Провода = ток, уходящий из вывода Компонента во внешнюю цепь:
-    // у батареи из «плюса» наружу, у остальных — из конца ветви, у
+    // у источников из «плюса» наружу, у остальных — из конца ветви, у
     // трёхвыводных — свой ток каждого вывода (pinCurrents).
-    return { wireId: wire.id, current: reading.pinCurrents[wire.from.pin] ?? null };
+    return { wireId: wire.id, current: pinCurrentOf(wire.from.componentId, wire.from.pin) };
+  });
+}
+
+export function wireCurrents(canvas: CanvasState, solution: DcSolution): readonly WireCurrent[] {
+  const byId = new Map(solution.readings.map((reading) => [reading.componentId, reading]));
+  return wireCurrentsFrom(canvas, (componentId, pin) => {
+    const reading = byId.get(componentId);
+    return reading?.pinCurrents[pin] ?? null;
   });
 }
 
@@ -326,6 +385,12 @@ function branchResistance(branch: Branch, contactStates?: ReadonlyMap<string, bo
     case 'capacitor':
       // для постоянного тока конденсатор — разрыв; переходный режим штемпелюет компаньона
       return Number.POSITIVE_INFINITY;
+    case 'inductor':
+      // для постоянного тока катушка — почти провод; переходный режим штемпелюет компаньона
+      return CLOSED_CONTACT_RESISTANCE;
+    case 'acsource':
+      // погашенный источник ~ остаётся внутренним сопротивлением (DC-проход)
+      return AC_SOURCE_INTERNAL_RESISTANCE;
   }
 }
 
@@ -340,88 +405,10 @@ export function forwardVoltageOf(component: PlacedComponent): number {
 }
 
 /**
- * Ветвь схемы: Компонент между узлами двух своих выводов. Большинство
- * Компонентов имеют одну ветвь (выводы 0 → 1); у транзистора две — переход
- * база—эмиттер и переход коллектор—эмиттер, у потенциометра две — плечи
- * вокруг движка.
+ * Ветвь схемы: Компонент между узлами двух своих выводов (топология — общая
+ * для решателей, см. topology.ts).
  */
-interface Branch {
-  readonly component: PlacedComponent;
-  /** Выводы Компонента на концах ветви. */
-  readonly pinA: number;
-  readonly pinB: number;
-  readonly nodeA: number;
-  readonly nodeB: number;
-}
-
-/** Выводы транзистора: база, коллектор, эмиттер (слева, справа сверху, справа снизу). */
-const BASE_PIN = 0;
-const COLLECTOR_PIN = 1;
-const EMITTER_PIN = 2;
-
-/** Ветви Компонента: две у трёхвыводных, одна у остальных. */
-function branchesOf(
-  component: PlacedComponent,
-  nodeOf: (componentId: string, pin: number) => number,
-): Branch[] {
-  if (component.kind === 'transistor') {
-    // переход база—эмиттер и переход коллектор—эмиттер
-    return [
-      {
-        component,
-        pinA: BASE_PIN,
-        pinB: EMITTER_PIN,
-        nodeA: nodeOf(component.id, BASE_PIN),
-        nodeB: nodeOf(component.id, EMITTER_PIN),
-      },
-      {
-        component,
-        pinA: COLLECTOR_PIN,
-        pinB: EMITTER_PIN,
-        nodeA: nodeOf(component.id, COLLECTOR_PIN),
-        nodeB: nodeOf(component.id, EMITTER_PIN),
-      },
-    ];
-  }
-  if (component.kind === 'potentiometer') {
-    // выводы: 0 и 2 — концы сопротивления, 1 — движок
-    return [
-      { component, pinA: 0, pinB: 1, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 1) },
-      { component, pinA: 1, pinB: 2, nodeA: nodeOf(component.id, 1), nodeB: nodeOf(component.id, 2) },
-    ];
-  }
-  return [
-    { component, pinA: 0, pinB: 1, nodeA: nodeOf(component.id, 0), nodeB: nodeOf(component.id, 1) },
-  ];
-}
-
-/** Система непересекающихся множеств с двухпроходным сжатием путей. */
-class DisjointSet {
-  private readonly parent = new Map<string, string>();
-
-  /** Неизвестный элемент — сам себе корень: множество растёт по мере union/find. */
-  find(item: string): string {
-    let root = item;
-    for (;;) {
-      const upstream = this.parent.get(root);
-      if (upstream === undefined || upstream === root) break;
-      root = upstream;
-    }
-    let current = item;
-    while (current !== root) {
-      const next = this.parent.get(current) ?? root;
-      this.parent.set(current, root);
-      current = next;
-    }
-    return root;
-  }
-
-  union(a: string, b: string): void {
-    const rootA = this.find(a);
-    const rootB = this.find(b);
-    if (rootA !== rootB) this.parent.set(rootA, rootB);
-  }
-}
+type Branch = TopologyBranch;
 
 /**
  * Решает схему постоянного тока. Остров без «живого» источника не возбуждается:
@@ -431,39 +418,17 @@ class DisjointSet {
  * активной ветви.
  */
 export function solveDc(canvas: CanvasState, options: DcSolveOptions = {}): DcSolution {
-  // Провода объединяют выводы в узлы; корень объединения — имя узла
-  const knownIds = new Set(canvas.components.map((component) => component.id));
-  const pinSets = new DisjointSet();
-  for (const wire of canvas.wires) {
-    if (!knownIds.has(wire.from.componentId) || !knownIds.has(wire.to.componentId)) continue;
-    pinSets.union(pinKey(wire.from.componentId, wire.from.pin), pinKey(wire.to.componentId, wire.to.pin));
-  }
+  // Топология (узлы, ветви, острова) — общая для решателей
+  const { branches, nodeCount, islandOf: findIsland } = buildTopology(canvas);
 
-  // Узлы нумеруются по порядку первого упоминания
-  const nodeIndex = new Map<string, number>();
-  const nodeOf = (componentId: string, pin: number): number => {
-    const root = pinSets.find(pinKey(componentId, pin));
-    let index = nodeIndex.get(root);
-    if (index === undefined) {
-      index = nodeIndex.size;
-      nodeIndex.set(root, index);
-    }
-    return index;
-  };
-
-  const branches: Branch[] = canvas.components.flatMap((component) => branchesOf(component, nodeOf));
-
-  // Остров — множество узлов, соединённых ветвями; имя острова — корень объединения
-  const islandSets = new DisjointSet();
-  const findIsland = (node: number): string => islandSets.find(String(node));
-  for (const branch of branches) {
-    if (branch.nodeA !== branch.nodeB) islandSets.union(String(branch.nodeA), String(branch.nodeB));
-  }
-
-  const nodeVoltage = new Array<number>(nodeIndex.size).fill(0);
-  // «Живой» источник острова: батарея, проба Thevenin или заряженный компаньон
+  const nodeVoltage = new Array<number>(nodeCount).fill(0);
+  // «Живой» источник острова: батарея, источник ~, проба Thevenin,
+  // заряженный компаньон конденсатора или катушка с током
   const energizesIsland = (branch: Branch): boolean =>
     branch.component.kind === 'battery' ||
+    branch.component.kind === 'acsource' ||
+    (branch.component.kind === 'inductor' &&
+      Math.abs(options.inductorStates?.get(branch.component.id)?.current ?? 0) >= ENERGIZED_CURRENT) ||
     (branch.component.kind === 'capacitor' &&
       (options.theveninProbeOf === branch.component.id ||
         Math.abs(options.capacitorStates?.get(branch.component.id)?.voltage ?? 0) >= ENERGIZED_VOLTAGE));
@@ -725,6 +690,21 @@ function solveWithDiodeStates(
       // проба Thevenin гасит источники ЭДС: остаётся только внутреннее сопротивление
       const emf = probe ? 0 : (branch.component.voltage ?? 0);
       stampNorton(branch, BATTERY_INTERNAL_RESISTANCE, emf);
+    } else if (branch.component.kind === 'acsource') {
+      // мгновенная ЭДС приходит извне (синус шага переходного режима);
+      // без неё источник погашен — так работает DC-проход суперпозиции
+      const emf = probe ? 0 : (options.sourceEmfs?.get(branch.component.id) ?? 0);
+      stampNorton(branch, AC_SOURCE_INTERNAL_RESISTANCE, emf);
+    } else if (branch.component.kind === 'inductor' && options.inductorStates?.has(branch.component.id)) {
+      // компаньон трапецеидального интегрирования: катушка ведёт себя как
+      // батарея с сопротивлением 2L/Δt и ЭДС −(i·2L/Δt + v) — её ток не может
+      // измениться скачком, поэтому компаньон держит ток предыдущего шага
+      const state = options.inductorStates.get(branch.component.id)!;
+      const inductance = branch.component.inductance ?? defaultInductance;
+      const resistance = inductorCompanionResistance(options.timeStep ?? 0, inductance);
+      if (Number.isFinite(resistance) && resistance > 0) {
+        stampNorton(branch, resistance, -(state.current * resistance + state.voltage));
+      }
     } else if (branch.component.kind === 'capacitor') {
       if (options.theveninProbeOf === branch.component.id) {
         // проба: источник тока 1 А между выводами конденсатора
@@ -883,6 +863,23 @@ function readingOfComponent(
     // мощность у батареи отдаваемая: знак произведения сохраняется
     return reading(current, voltage * current);
   }
+  if (component.kind === 'acsource') {
+    // тот же behavioural-модель, что у батареи: мгновенная ЭДС из опций
+    const emf = options.sourceEmfs?.get(component.id) ?? 0;
+    const current = (emf - voltage) / AC_SOURCE_INTERNAL_RESISTANCE;
+    return reading(current, voltage * current);
+  }
+  if (component.kind === 'inductor') {
+    // компаньон переходного режима: ток восстанавливается по его уравнению,
+    // i = (v + i_пред·r + v_пред)/r; обычное решение — почти провод
+    const state = options.inductorStates?.get(component.id);
+    const resistance = inductorCompanionResistance(options.timeStep ?? 0, component.inductance ?? defaultInductance);
+    const current =
+      state !== undefined && resistance > 0
+        ? (voltage + state.current * resistance + state.voltage) / resistance
+        : voltage / CLOSED_CONTACT_RESISTANCE;
+    return reading(current, Math.abs(voltage * current));
+  }
   if (component.kind === 'capacitor') {
     // компаньон переходного режима: ток восстанавливается по его уравнению,
     // i = (v − v_пред)/r − i_пред; обычное решение — обрыв, ток нулевой
@@ -909,7 +906,8 @@ function readingOfComponent(
 
 /** Токи двухвыводного Компонента: наружу из конца ветви, внутрь из начала. */
 function twoPinCurrents(kind: ComponentKind, current: number): readonly number[] {
-  return kind === 'battery' ? [current, -current] : [-current, current];
+  // источники отдают ток из «плюса» (вывода 0) во внешнюю цепь
+  return kind === 'battery' || kind === 'acsource' ? [current, -current] : [-current, current];
 }
 
 /** Показание транзистора: коллекторный ток и напряжение коллектор—эмиттер. */

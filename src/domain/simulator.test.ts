@@ -654,3 +654,36 @@ describe('Зуммер: звучит при токе выше порога (М2,
     expectCloseTo(buzzer.power, current * current * 50, 0.01);
   });
 });
+
+describe('Катушка и источник ~: модели постоянного тока (М4, тикет 20)', () => {
+  it('катушка для постоянного тока — почти провод: ток как в цепи без неё', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 1000 }), component('l', 'inductor')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('l', 0)), wire('w3', pin('l', 1), pin('b', 1))],
+    );
+    const solution = solveDc(canvas);
+    const current = 9 / (1000 + 0.1 + 0.001);
+    expectCloseTo(readingOf(solution, 'l')!.current, current);
+    expectCloseTo(readingOf(solution, 'r')!.current, current);
+    // всё напряжение падает на резисторе, на катушке — почти ноль
+    expectCloseTo(readingOf(solution, 'l')!.voltage, current * 0.001);
+  });
+
+  it('погашенный источник ~ в solveDc остаётся внутренним сопротивлением: 9 В / (R + 0,2)', () => {
+    const canvas = canvasOf(
+      [component('b', 'battery'), component('r', 'resistor', { resistance: 10 }), component('src', 'acsource')],
+      [wire('w1', pin('b', 0), pin('r', 0)), wire('w2', pin('r', 1), pin('src', 0)), wire('w3', pin('src', 1), pin('b', 1))],
+    );
+    const solution = solveDc(canvas);
+    expectCloseTo(readingOf(solution, 'r')!.current, 9 / (10 + 0.1 + 0.1));
+  });
+
+  it('мгновенная ЭДС источника ~ приходит через sourceEmfs', () => {
+    const canvas = canvasOf(
+      [component('r', 'resistor', { resistance: 10 }), component('src', 'acsource')],
+      [wire('w1', pin('r', 0), pin('src', 0)), wire('w2', pin('src', 1), pin('r', 1))],
+    );
+    const solution = solveDc(canvas, { sourceEmfs: new Map([['src', 5]]) });
+    expectCloseTo(readingOf(solution, 'r')!.current, 5 / (10 + 0.1));
+  });
+});

@@ -19,6 +19,8 @@ export const componentKinds = [
   'transistor',
   'potentiometer',
   'buzzer',
+  'acsource',
+  'inductor',
 ] as const;
 
 /** Тип выводится из списка: список и тип не могут разойтись. */
@@ -51,6 +53,18 @@ export const defaultPotentiometerWiper = 0.5;
 /** Сопротивление зуммера по умолчанию, Ом — учебный активный звукоизлучатель. */
 export const defaultBuzzerResistance = 50;
 
+/**
+ * Амплитуда источника ~ по умолчанию, В (пиковое значение): при 50 Гц с
+ * типовыми номиналами RC даёт напряжения, читаемые на оверлее и в Мультиметре.
+ */
+export const defaultAcAmplitude = 5;
+
+/** Частота источника ~ по умолчанию, Гц: сетевая классика, знакомая ученику. */
+export const defaultAcFrequency = 50;
+
+/** Индуктивность катушки по умолчанию, Гн: при 50 Гц даёт сопротивление 314 Ом. */
+export const defaultInductance = 1;
+
 /** Это цвет свечения светодиода? */
 export function isLedColor(value: unknown): value is LedColor {
   return typeof value === 'string' && (ledColors as readonly string[]).includes(value);
@@ -79,7 +93,8 @@ export type Rotation = 0 | 90 | 180 | 270;
  * светодиод — color (цвет свечения и заодно прямой порог); диод и транзистор
  * правимого номинала не имеют; конденсатор — capacitance (Ф);
  * потенциометр — resistance (общее) и wiper (движок, доля от 0 до 1 между
- * выводом 0 и движком).
+ * выводом 0 и движком); источник ~ — voltage (амплитуда, В) и frequency (Гц);
+ * катушка — inductance (Гн).
  */
 export interface PlacedComponent {
   readonly id: string;
@@ -93,6 +108,8 @@ export interface PlacedComponent {
   readonly color?: LedColor;
   readonly capacitance?: number;
   readonly wiper?: number;
+  readonly frequency?: number;
+  readonly inductance?: number;
 }
 
 /** Ссылка на вывод Компонента: идентификатор и номер вывода. */
@@ -147,6 +164,8 @@ export interface ComponentValuePatch {
   readonly color?: LedColor;
   readonly capacitance?: number;
   readonly wiper?: number;
+  readonly frequency?: number;
+  readonly inductance?: number;
 }
 
 /** История Холста: undo/redo — часть состояния, редьюсер остаётся чистым. */
@@ -173,10 +192,12 @@ const DEFAULT_VALUES: Record<ComponentKind, Omit<PlacedComponent, 'id' | 'kind' 
   transistor: {},
   potentiometer: { resistance: defaultPotentiometerResistance, wiper: defaultPotentiometerWiper },
   buzzer: { resistance: defaultBuzzerResistance },
+  acsource: { voltage: defaultAcAmplitude, frequency: defaultAcFrequency },
+  inductor: { inductance: defaultInductance },
 };
 
 /** Какое номинальное поле носит вид Компонента. */
-export type ValueField = 'voltage' | 'resistance' | 'closed' | 'color' | 'capacitance' | 'none';
+export type ValueField = 'voltage' | 'resistance' | 'closed' | 'color' | 'capacitance' | 'inductance' | 'none';
 
 const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   battery: 'voltage',
@@ -191,6 +212,9 @@ const VALUE_FIELD: Record<ComponentKind, ValueField> = {
   transistor: 'none',
   potentiometer: 'resistance',
   buzzer: 'resistance',
+  // у источника ~ главное поле — амплитуда (в вольтах); частота правится рядом
+  acsource: 'voltage',
+  inductor: 'inductance',
 };
 
 /** Поле номинала вида: батарея — напряжение, резистор/лампа/мотор — сопротивление, коммутаторы — состояние. */
@@ -357,7 +381,8 @@ export function canvasReducer(history: CanvasHistory, action: CanvasAction): Can
  * чужим напряжением) и только конечное положительное число — обрыв цепи
  * рисуется удалением Компонента, а не нулевым сопротивлением. Некорректная
  * правка отклоняется целиком. У потенциометра два поля: сопротивление
- * и движок (доля от 0 до 1), правятся и вместе, и по отдельности.
+ * и движок (доля от 0 до 1), у источника ~ — амплитуда и частота; поля
+ * правятся и вместе, и по отдельности.
  */
 function applicableValuePatch(
   kind: ComponentKind,
@@ -365,9 +390,11 @@ function applicableValuePatch(
 ): ComponentValuePatch | null {
   switch (VALUE_FIELD[kind]) {
     case 'voltage':
-      return patch.voltage !== undefined && isPositiveNumber(patch.voltage)
-        ? { voltage: patch.voltage }
-        : null;
+      return kind === 'acsource'
+        ? acsourcePatch(patch)
+        : patch.voltage !== undefined && isPositiveNumber(patch.voltage)
+          ? { voltage: patch.voltage }
+          : null;
     case 'resistance':
       return kind === 'potentiometer'
         ? potentiometerPatch(patch)
@@ -382,10 +409,34 @@ function applicableValuePatch(
       return patch.capacitance !== undefined && isPositiveNumber(patch.capacitance)
         ? { capacitance: patch.capacitance }
         : null;
+    case 'inductance':
+      return patch.inductance !== undefined && isPositiveNumber(patch.inductance)
+        ? { inductance: patch.inductance }
+        : null;
     case 'none':
       // у диода и транзистора нет правимого номинала — правка отклоняется целиком
       return null;
   }
+}
+
+/** Правка источника ~: амплитуда (В) и/или частота (Гц). */
+function acsourcePatch(patch: ComponentValuePatch): ComponentValuePatch | null {
+  const voltage =
+    patch.voltage !== undefined
+      ? isPositiveNumber(patch.voltage)
+        ? { voltage: patch.voltage }
+        : null
+      : {};
+  const frequency =
+    patch.frequency !== undefined
+      ? isPositiveNumber(patch.frequency)
+        ? { frequency: patch.frequency }
+        : null
+      : {};
+  if (voltage === null || frequency === null) return null;
+  return Object.keys(voltage).length + Object.keys(frequency).length > 0
+    ? { ...voltage, ...frequency }
+    : null;
 }
 
 /** Правка потенциометра: сопротивление и/или положение движка. */

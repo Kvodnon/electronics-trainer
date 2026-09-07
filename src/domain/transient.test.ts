@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultValuesOf, type CanvasState, type ComponentKind, type PlacedComponent, type Wire } from './canvas';
-import { toggledContactStates, solveTransient, voltageAt } from './transient';
+import { toggledContactStates, solveTransient, voltageAt, valueAtTime } from './transient';
 import type { TransientPlan } from './task';
 
 /**
@@ -191,5 +191,75 @@ describe('Крайние случаи', () => {
     expect(voltageAt(solution, 'c', -5)).toBe(voltageAt(solution, 'c', 0));
     expect(voltageAt(solution, 'c', 100)).toBe(voltageAt(solution, 'c', 2));
     expect(voltageAt(solution, 'нет-такого', 1)).toBeNull();
+  });
+});
+
+describe('Катушка в переходном режиме (М4, тикет 20)', () => {
+  it('RL-цепь: ток растёт по экспоненте к 10/(R + r), τ = L/(R + r)', () => {
+    // батарея 10 В, резистор 10 Ом, катушка 1 Гн: τ = 1/10,1 ≈ 0,099 с
+    const solution = solveTransient(
+      ring(comp('bat', 'battery', { voltage: 10 }), comp('r', 'resistor', { resistance: 10 }), comp('l', 'inductor', { inductance: 1 })),
+      { duration: 0.5 },
+    );
+    const tau = 1 / 10.1;
+    const steady = 10 / 10.1;
+    const currentAt = (time: number) => {
+      const curve = solution.componentCurrents.get('l')!;
+      return Math.abs(valueAtTime(solution.times, curve, time)!);
+    };
+    // i(t) = I_max·(1 − e^(−t/τ)): за τ — 63,2 %, к 5τ — практически максимум
+    expect(currentAt(tau)).toBeCloseTo(steady * (1 - Math.exp(-1)), 2);
+    expect(currentAt(0.5)).toBeCloseTo(steady * (1 - Math.exp(-0.5 / tau)), 3);
+    expect(currentAt(0)).toBeCloseTo(0, 2);
+  });
+
+  it('катушка держит ток: после размыкания ключа ток уходит в резистор без скачка', () => {
+    // катушка параллельно резистору, ключ — в цепи батареи: после размыкания
+    // остаётся замкнутый контур катушка—резистор, ток спадает с τ = L/R
+    const canvas = {
+      components: [
+        comp('bat', 'battery', { voltage: 10 }),
+        comp('sw', 'switch', { closed: true }),
+        comp('l', 'inductor', { inductance: 1 }),
+        comp('r', 'resistor', { resistance: 10 }),
+      ],
+      wires: [
+        { id: 'w1', from: { componentId: 'bat', pin: 0 }, to: { componentId: 'sw', pin: 0 } },
+        { id: 'w2', from: { componentId: 'sw', pin: 1 }, to: { componentId: 'l', pin: 0 } },
+        { id: 'w3', from: { componentId: 'l', pin: 1 }, to: { componentId: 'bat', pin: 1 } },
+        { id: 'w4', from: { componentId: 'l', pin: 0 }, to: { componentId: 'r', pin: 0 } },
+        { id: 'w5', from: { componentId: 'r', pin: 1 }, to: { componentId: 'l', pin: 1 } },
+      ],
+    };
+    const solution = solveTransient(canvas, { duration: 1, switchToggleTime: 0.3 });
+    const currentAt = (time: number) => {
+      const curve = solution.componentCurrents.get('l')!;
+      return Math.abs(valueAtTime(solution.times, curve, time)!);
+    };
+    const before = currentAt(0.29);
+    const after = currentAt(0.301);
+    // окно 11 мс при τ = 0,1 с — спад около процента: скачка нет
+    expect(Math.abs(after - before) / before).toBeLessThan(0.05);
+    // и после размыкания ток спадает: к t = 0,7 (4τ) — почти ноль
+    expect(currentAt(0.7)).toBeLessThan(before * 0.05);
+  });
+});
+
+describe('Источник ~ в переходном режиме: синус на каждом шаге (М4, тикет 20)', () => {
+  it('напряжение на резисторе повторяет синус амплитуды с делителем', () => {
+    const canvas = ring(comp('src', 'acsource', { voltage: 5, frequency: 50 }), comp('r', 'resistor', { resistance: 10 }));
+    const solution = solveTransient(canvas, { duration: 0.1 });
+    const voltageAt_ = (time: number) => {
+      const curve = solution.componentVoltages.get('r')!;
+      return valueAtTime(solution.times, curve, time)!;
+    };
+    const peak = 5 * (10 / 10.1); // делитель: r_источника = 0,1 Ом
+    // кольцо соединяет ток «против хода» выводов — кривая зеркальна синусу
+    const period = 0.02;
+    expect(Math.abs(voltageAt_(period / 4))).toBeCloseTo(peak, 1);
+    expect(Math.abs(voltageAt_(period / 2))).toBeCloseTo(0, 1);
+    expect(Math.abs(voltageAt_((3 * period) / 4))).toBeCloseTo(peak, 1);
+    // сетка шага мельче сороковой доли периода
+    expect(solution.times[1] - solution.times[0]).toBeLessThan(period / 40 + 1e-9);
   });
 });

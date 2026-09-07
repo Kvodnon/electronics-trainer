@@ -251,6 +251,8 @@ export type ComponentSymbolId =
   | 'transistor'
   | 'potentiometer'
   | 'buzzer'
+  | 'ac-source'
+  | 'inductor'
   // Цифровые виды М3: совпадают с DigitalKind — отрисовка берётся из слоя
   // цифровых символов (DigitalSymbols), где уже живут оба стандарта.
   | 'and'

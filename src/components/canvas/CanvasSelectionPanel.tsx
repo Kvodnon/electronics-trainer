@@ -34,7 +34,7 @@ export function CanvasSelectionPanel({
     <div className="canvas-selection">
       <p className="canvas-selection-name">{name}</p>
       <ComponentValueForm
-        key={`${component.id}:${component.voltage ?? component.resistance ?? component.capacitance ?? String(component.closed)}`}
+        key={`${component.id}:${component.voltage ?? component.resistance ?? component.capacitance ?? component.inductance ?? String(component.closed)}`}
         component={component}
         onApply={onValueSet}
       />
@@ -112,6 +112,11 @@ function ComponentValueForm({
       value: component.capacitance,
       patch: (parsed: number): ComponentValuePatch => ({ capacitance: parsed }),
     },
+    inductance: {
+      unit: 'Гн' as QuantityUnit,
+      value: component.inductance,
+      patch: (parsed: number): ComponentValuePatch => ({ inductance: parsed }),
+    },
   };
   const { unit, value, patch } = NUMERIC_FIELDS[field];
   const [raw, setRaw] = useState(String(value ?? '').replace('.', ','));
@@ -136,7 +141,9 @@ function ComponentValueForm({
           submit();
         }}
       >
-        <label htmlFor={`canvas-value-${component.id}`}>Номинал, {unit}</label>
+        <label htmlFor={`canvas-value-${component.id}`}>
+          {component.kind === 'acsource' ? 'Амплитуда, В' : `Номинал, ${unit}`}
+        </label>
         <input
           id={`canvas-value-${component.id}`}
           className="numeric-input-field"
@@ -152,7 +159,55 @@ function ComponentValueForm({
       {component.kind === 'potentiometer' && (
         <PotentiometerWiper component={component} onApply={onApply} />
       )}
+      {component.kind === 'acsource' && (
+        <AcsourceFrequency component={component} onApply={onApply} />
+      )}
     </>
+  );
+}
+
+/** Частота источника ~: отдельное поле рядом с амплитудой. */
+function AcsourceFrequency({
+  component,
+  onApply,
+}: {
+  component: PlacedComponent;
+  onApply: (patch: ComponentValuePatch) => void;
+}) {
+  const [raw, setRaw] = useState(String(component.frequency ?? '').replace('.', ','));
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    const parsed = parseQuantity(raw, 'Гц');
+    if (parsed.status === 'error') {
+      setError(parsed.message);
+      return;
+    }
+    setError(null);
+    onApply({ frequency: parsed.value });
+  }
+
+  return (
+    <form
+      className="canvas-value-form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <label htmlFor={`canvas-frequency-${component.id}`}>Частота, Гц</label>
+      <input
+        id={`canvas-frequency-${component.id}`}
+        className="numeric-input-field"
+        value={raw}
+        onChange={(event) => setRaw(event.target.value)}
+        aria-invalid={error !== null}
+      />
+      <button type="submit" className="button-primary">
+        Применить
+      </button>
+      {error !== null && <p className="input-error">{error}</p>}
+    </form>
   );
 }
 

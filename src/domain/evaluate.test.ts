@@ -183,7 +183,7 @@ describe('evaluate: Схема-задание', () => {
     expect(verdict.conditionChecks).toHaveLength(3);
     expect(verdict.conditionChecks.every((check) => check.passed)).toBe(true);
     expect(verdict.conditionChecks[2].text).toContain('9 мА');
-    expect(verdict.solution.readings).toHaveLength(2);
+    expect(verdict.solution.dc.readings).toHaveLength(2);
   });
 
   it('эквивалентные схемы проходят одинаково: один резистор 1 кОм или два 500 Ом последовательно', () => {

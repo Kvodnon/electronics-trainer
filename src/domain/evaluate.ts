@@ -8,7 +8,7 @@ import type { DigitalCanvasState } from './digitalCanvas';
 import { checkConditions, type ConditionCheck } from './circuitConditions';
 import { checkLogicTable, type LogicRowCheck, type LogicDiagnosis } from './logicCheck';
 import { diagnoseCircuit, type CircuitDiagnosis } from './circuitDiagnoses';
-import { solveDc, type DcSolution } from './simulator';
+import { solveCircuit, type CircuitSolution } from './phasor';
 import { solveTransient, toggledContactStates, type TransientSolution } from './transient';
 
 /** Ответ ученика на Вопрос с выбором варианта. */
@@ -90,8 +90,8 @@ export interface CircuitTaskEvaluation {
   readonly conditionChecks: readonly ConditionCheck[];
   /** Первичный Диагноз: пуст для «пройдено». */
   readonly diagnoses: readonly CircuitDiagnosis[];
-  /** Расчёт, на котором построен вердикт: токи и напряжения собранной схемы. */
-  readonly solution: DcSolution;
+  /** Расчёт, на котором построен вердикт: суперпозиция DC и фазорного решения. */
+  readonly solution: CircuitSolution;
   /** Кривые переходного режима, если он есть в Задании: для условий во времени. */
   readonly transient?: TransientSolution;
 }
@@ -194,19 +194,22 @@ function evaluateNumeric(
 }
 
 /**
- * Проверка Схема-задания: Симулятор считает токи и напряжения, условия
- * проверяются по решению, Диагноз называет причину провала и место ошибки.
- * Эквивалентные схемы дают одинаковый исход. Задание с переходным режимом
- * проверяется после переключения коммутаторов — именно при этой топологии
- * течёт процесс, который сверяется с условиями во времени.
+ * Проверка Схема-задания: Симулятор считает токи и напряжения (суперпозиция
+ * постоянной и переменной составляющих), условия проверяются по решению,
+ * Диагноз называет причину провала и место ошибки. Эквивалентные схемы дают
+ * одинаковый исход. Задание с переходным режимом проверяется после
+ * переключения коммутаторов — именно при этой топологии течёт процесс,
+ * который сверяется с условиями во времени.
  */
 function evaluateCircuit(task: CircuitTask, answer: CircuitAnswer): CircuitTaskEvaluation {
   const transient = task.transient !== undefined ? solveTransient(answer.canvas, task.transient) : undefined;
-  const solution = solveDc(answer.canvas, {
+  const solution = solveCircuit(answer.canvas, {
     contactStates: transient !== undefined ? toggledContactStates(answer.canvas) : undefined,
   });
-  const conditionChecks = checkConditions(answer.canvas, solution, task.conditions, transient);
-  const diagnoses = diagnoseCircuit(answer.canvas, solution, conditionChecks);
+  // несошедшаяся схема — прежнее поведение решателя: ошибка проверки, не вердикт
+  if (solution === null) throw new Error('Сингулярная матрица узловых уравнений');
+  const conditionChecks = checkConditions(answer.canvas, solution.dc, task.conditions, transient);
+  const diagnoses = diagnoseCircuit(answer.canvas, solution.dc, conditionChecks);
   const outcome: CircuitOutcome = conditionChecks.every((check) => check.passed)
     ? 'correct'
     : diagnoses[0]?.kind === 'works-not-per-task'

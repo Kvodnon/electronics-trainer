@@ -51,9 +51,21 @@ export function MultimeterControls({ on, mode, result, onToggle, onModeChange }:
                 : undefined
             }
           >
-            {result.status === 'ok'
-              ? formatQuantity(result.reading.value, result.reading.unit)
-              : '—'}
+            {result.status === 'ok' ? (
+              <>
+                {formatQuantity(result.reading.value, result.reading.unit)}
+                {result.reading.ac !== undefined && (
+                  <span className="multimeter-ac">
+                    {' '}
+                    ~{formatQuantity(result.reading.ac.amplitude, result.reading.unit)} ∠
+                    {Math.round(result.reading.ac.phaseDeg)}° · RMS{' '}
+                    {formatQuantity(result.reading.ac.rms, result.reading.unit)}
+                  </span>
+                )}
+              </>
+            ) : (
+              '—'
+            )}
           </output>
         </span>
       )}

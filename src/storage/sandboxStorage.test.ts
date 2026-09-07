@@ -77,7 +77,7 @@ describe('Хранение схем Песочницы', () => {
         id: 's1',
         name: 'Чужой вид',
         canvas: {
-          components: [{ id: 'c1', kind: 'inductor', x: 0, y: 0, rotation: 0 }],
+          components: [{ id: 'c1', kind: 'vacuum-tube', x: 0, y: 0, rotation: 0 }],
           wires: [],
         },
       },

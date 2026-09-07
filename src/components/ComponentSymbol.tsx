@@ -217,6 +217,45 @@ const registry: Record<ComponentSymbolId, SymbolEntry> = {
       </>
     ),
   },
+  'ac-source': {
+    name: 'Источник переменного напряжения',
+    gost: (
+      <>
+        {/* круг с синусоидой (ГОСТ 2.737): оба стандарта здесь сходятся */}
+        {leadLeftTo(54)}
+        <circle cx="70" cy="24" r="16" />
+        <path d="M61 24 C63.5 14 67.5 14 70 24 S76.5 34 79 24" />
+        {leadRightFrom(86)}
+      </>
+    ),
+    ansi: (
+      <>
+        {leadLeftTo(54)}
+        <circle cx="70" cy="24" r="16" />
+        <path d="M61 24 C63.5 14 67.5 14 70 24 S76.5 34 79 24" />
+        {leadRightFrom(86)}
+      </>
+    ),
+  },
+  inductor: {
+    name: 'Катушка',
+    gost: (
+      <>
+        {/* три полудуги обмотки (ГОСТ 2.723) */}
+        {leadLeftTo(46)}
+        <path d="M46 24 A8 8 0 0 1 62 24 A8 8 0 0 1 78 24 A8 8 0 0 1 94 24" />
+        {leadRightFrom(94)}
+      </>
+    ),
+    ansi: (
+      <>
+        {/* четыре петли обмотки — частый англоязычный рисунок катушки */}
+        {leadLeftTo(46)}
+        <path d="M46 24 A6 6 0 0 1 58 24 A6 6 0 0 1 70 24 A6 6 0 0 1 82 24 A6 6 0 0 1 94 24" />
+        {leadRightFrom(94)}
+      </>
+    ),
+  },
   ...digitalRegistry,
 };
 

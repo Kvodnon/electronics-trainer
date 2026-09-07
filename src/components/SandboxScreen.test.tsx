@@ -101,7 +101,6 @@ describe('Осциллограф в Песочнице (тикет 14)', () => {
     }
     return render(<Harness />);
   }
-
   it('осциллограф строится сам: ключ переключается на середине проигрывания', async () => {
     const user = userEvent.setup();
     renderSandboxWithCapacitor();
@@ -193,5 +192,49 @@ describe('Мои схемы: сохранение, загрузка, удале�
     await user.type(screen.getByRole('textbox', { name: 'Название схемы' }), '   ');
     expect(saveButton).toBeDisabled();
     expect(screen.getByText(/Пока ничего не сохранено/)).toBeInTheDocument();
+  });
+});
+
+describe('Источник ~ и Мультиметр: амплитуда, фаза и RMS (М4, тикет 20)', () => {
+  /** Палитра М4: источник ~ и резистор — минимальная цепь переменного тока. */
+  function renderSandboxWithAc() {
+    function Harness() {
+      const [standard, setStandard] = useState<SymbolStandard>('gost');
+      return (
+        <SandboxScreen
+          palette={['acsource' as const, 'resistor' as const]}
+          circuits={[]}
+          onSaveCircuit={() => undefined}
+          onDeleteCircuit={() => undefined}
+          symbolStandard={standard}
+          onSymbolStandardChange={setStandard}
+          onExit={() => undefined}
+        />
+      );
+    }
+    return render(<Harness />);
+  }
+
+  it('Мультиметр показывает постоянную составляющую, амплитуду с фазой и RMS', async () => {
+    const user = userEvent.setup();
+    renderSandboxWithAc();
+
+    // источник ~ 5 В 50 Гц и резистор 1 кОм в контуре «по стрелке»:
+    // амплитуда на резисторе 5 В · 1000/1000,2 ≈ 5 В, RMS ≈ 3,54 В, фаза ≈ 0°
+    await user.click(screen.getByRole('button', { name: 'Источник ~' }));
+    await user.click(screen.getByRole('button', { name: 'Резистор' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Источник ~ 1' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Источник ~ 1' }));
+
+    await user.click(screen.getByRole('checkbox', { name: 'Мультиметр' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 1: Резистор 2' }));
+    await user.click(screen.getByRole('button', { name: 'Вывод 2: Резистор 2' }));
+
+    const display = document.querySelector('.multimeter-display')!.textContent ?? '';
+    expect(display).toContain('~5 В');
+    expect(display).toContain('∠0°');
+    expect(display).toContain('RMS 3,54 В');
   });
 });

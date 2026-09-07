@@ -47,6 +47,8 @@ export const componentTitles: Record<ComponentKind, string> = {
   transistor: 'Транзистор',
   potentiometer: 'Потенциометр',
   buzzer: 'Зуммер',
+  acsource: 'Источник ~',
+  inductor: 'Катушка',
 };
 
 /** Названия цветов свечения светодиода (копия UI; идентификаторы — данные домена). */
@@ -73,6 +75,13 @@ export const standardTitles: Record<SymbolStandard, string> = {
 
 /** Подпись номинала рядом с Компонентом на Холсте. */
 export function componentValueLabel(component: PlacedComponent): string {
+  // у источника ~ два номинала: амплитуда и частота
+  if (component.kind === 'acsource') {
+    return `~${formatQuantity(component.voltage ?? 0, 'В')} · ${formatQuantity(
+      component.frequency ?? 0,
+      'Гц',
+    )}`;
+  }
   switch (valueFieldOf(component.kind)) {
     case 'voltage':
       return formatQuantity(component.voltage ?? 0, 'В');
@@ -90,6 +99,8 @@ export function componentValueLabel(component: PlacedComponent): string {
     }
     case 'capacitance':
       return formatQuantity(component.capacitance ?? defaultCapacitance, 'Ф');
+    case 'inductance':
+      return formatQuantity(component.inductance ?? 0, 'Гн');
     case 'none':
       return component.kind === 'transistor'
         ? `β ≈ ${TRANSISTOR_BETA}`
@@ -259,6 +270,23 @@ function GostBody({ component, reading, chargeLevel }: { component: PlacedCompon
           <BuzzerWaves reading={reading} />
         </>
       );
+    case 'acsource':
+      return (
+        <>
+          {/* источник переменного напряжения: круг с синусоидой (ГОСТ 2.737) */}
+          <Leads from={16} />
+          <circle cx="0" cy="0" r="16" />
+          <path d="M-9 0 C-6.5 -10 -2.5 -10 0 0 S6.5 10 9 0" />
+        </>
+      );
+    case 'inductor':
+      return (
+        <>
+          {/* катушка: три полудуги обмотки (ГОСТ 2.723) */}
+          <Leads from={24} />
+          <path d="M-24 0 A8 8 0 0 1 -8 0 A8 8 0 0 1 8 0 A8 8 0 0 1 24 0" />
+        </>
+      );
   }
 }
 
@@ -376,6 +404,23 @@ function AnsiBody({ component, reading, chargeLevel }: { component: PlacedCompon
           <path d="M-14 10 A14 14 0 0 1 14 10 M-14 10 H14" />
           <path d="M18 -2 A16 16 0 0 1 18 14 M24 -8 A24 24 0 0 1 24 20" />
           <BuzzerWaves reading={reading} />
+        </>
+      );
+    case 'acsource':
+      return (
+        <>
+          {/* круг с синусоидой: здесь оба стандарта сходятся */}
+          <Leads from={16} />
+          <circle cx="0" cy="0" r="16" />
+          <path d="M-9 0 C-6.5 -10 -2.5 -10 0 0 S6.5 10 9 0" />
+        </>
+      );
+    case 'inductor':
+      return (
+        <>
+          {/* четыре петли обмотки — частый англоязычный рисунок катушки */}
+          <Leads from={24} />
+          <path d="M-24 0 A6 6 0 0 1 -12 0 A6 6 0 0 1 0 0 A6 6 0 0 1 12 0 A6 6 0 0 1 24 0" />
         </>
       );
   }

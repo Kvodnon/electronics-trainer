@@ -6,6 +6,7 @@ import type { CircuitAnswer, CircuitOutcome, CircuitTaskEvaluation } from '../..
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
 import { solveTransient, type TransientSolution } from '../../domain/transient';
 import { HintLadder } from '../HintLadder';
+import { acAmplitudesOf } from '../../domain/phasor';
 import { readingsByComponent, wireCurrents } from '../../domain/simulator';
 import { useLiveCircuit, useMultimeter } from './liveCircuit';
 import { MultimeterControls, StandardControls } from './ToolbarControls';
@@ -64,14 +65,16 @@ export function CircuitTaskScreen({
   }, [history.present, task.transient]);
   const playback = useTransientPlayback(transient);
 
-  /** Оверлей токов и напряжений — по решению, на котором построен вердикт. */
+  /** Оверлей токов и напряжений — по решению, на котором построен вердикт.
+   * В схемах с источником ~ поверх постоянных значений показываются амплитуды. */
   const overlay = useMemo<CanvasOverlay | null>(() => {
     if (shownEvaluation === null || !showReadings) return null;
     return {
-      componentReadings: readingsByComponent(shownEvaluation.solution),
+      componentReadings: readingsByComponent(shownEvaluation.solution.dc),
       wireCurrents: new Map(
-        wireCurrents(history.present, shownEvaluation.solution).map((entry) => [entry.wireId, entry.current]),
+        wireCurrents(history.present, shownEvaluation.solution.dc).map((entry) => [entry.wireId, entry.current]),
       ),
+      ac: acAmplitudesOf(history.present, shownEvaluation.solution) ?? undefined,
     };
   }, [shownEvaluation, showReadings, history.present]);
 

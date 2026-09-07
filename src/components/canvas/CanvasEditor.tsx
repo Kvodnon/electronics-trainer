@@ -22,6 +22,7 @@ import { useCanvasGestures } from './canvasGestures';
 import { formatQuantity } from '../../domain/quantity';
 import { probePoints, type MultimeterMode, type MultimeterProbes } from '../../domain/multimeter';
 import type { CircuitDiagnosisSpot } from '../../domain/circuitDiagnoses';
+import type { AcAmplitudes } from '../../domain/phasor';
 import type { ComponentReading } from '../../domain/simulator';
 import type { SymbolStandard } from '../../domain/symbols';
 
@@ -45,6 +46,11 @@ const LABEL_OFFSET_Y = -38;
 export interface CanvasOverlay {
   readonly componentReadings: ReadonlyMap<string, ComponentReading>;
   readonly wireCurrents: ReadonlyMap<string, number | null>;
+  /**
+   * Амплитуды переменной составляющей (тикет 20): заданы — оверлей показывает
+   * их вместо постоянных значений, с пометкой «~».
+   */
+  readonly ac?: AcAmplitudes;
 }
 
 /**
@@ -289,7 +295,8 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
 
         {overlay &&
           canvas.wires.map((wire) => {
-            const current = overlay.wireCurrents.get(wire.id);
+            const acCurrent = overlay.ac?.wireAmplitudes.get(wire.id);
+            const current = acCurrent ?? overlay.wireCurrents.get(wire.id);
             if (current === undefined || current === null) return null;
             const route = routeWire(wireFrom(wire.from), wireFrom(wire.to));
             const middle = routeMidpoint(route);
@@ -302,7 +309,7 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
                 textAnchor="middle"
                 aria-hidden="true"
               >
-                {formatQuantity(Math.abs(current), 'А')}
+                {overlay.ac !== undefined ? `~${formatQuantity(current, 'А')}` : formatQuantity(Math.abs(current), 'А')}
               </text>
             );
           })}
@@ -355,8 +362,17 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
         {overlay &&
           components.map((component) => {
             const reading = overlay.componentReadings.get(component.id);
-            if (reading === undefined) return null;
+            const acReading = overlay.ac?.componentAmplitudes.get(component.id);
+            if (reading === undefined && acReading === undefined) return null;
             const shown = withDrag(component);
+            const currentText =
+              acReading !== undefined
+                ? `~${formatQuantity(acReading.current, 'А')}`
+                : formatQuantity(Math.abs(reading!.current), 'А');
+            const voltageText =
+              acReading !== undefined
+                ? `~${formatQuantity(acReading.voltage, 'В')}`
+                : formatQuantity(Math.abs(reading!.voltage), 'В');
             return (
               <text
                 key={`${component.id}:reading`}
@@ -366,9 +382,9 @@ export function CanvasEditor({ palette, history, onAction, symbolStandard, actio
                 textAnchor="middle"
                 aria-hidden="true"
               >
-                <tspan className="canvas-reading-current">{formatQuantity(Math.abs(reading.current), 'А')}</tspan>
+                <tspan className="canvas-reading-current">{currentText}</tspan>
                 <tspan className="canvas-reading-voltage" dx={8}>
-                  {formatQuantity(Math.abs(reading.voltage), 'В')}
+                  {voltageText}
                 </tspan>
               </text>
             );

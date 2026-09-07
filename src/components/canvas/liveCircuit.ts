@@ -1,11 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { CanvasHistory, PinRef } from '../../domain/canvas';
-import {
-  readingsByComponent,
-  solveDc,
-  type ComponentReading,
-  type DcSolution,
-} from '../../domain/simulator';
+import { solveCircuit, effectiveReadings, type CircuitSolution } from '../../domain/phasor';
+import type { ComponentReading } from '../../domain/simulator';
 import {
   emptyProbes,
   measure,
@@ -23,22 +19,21 @@ import type { MultimeterGestures } from './CanvasEditor';
 
 /** Живая схема: решение и показания пересчитываются на каждое изменение Холста. */
 export function useLiveCircuit(history: CanvasHistory): {
-  readonly solution: DcSolution | null;
+  readonly solution: CircuitSolution | null;
   readonly readings: ReadonlyMap<string, ComponentReading>;
 } {
-  /** Решение Симулятора: сбой схемы — null, живое поведение просто гаснет. */
-  const solution = useMemo<DcSolution | null>(() => {
-    try {
-      return solveDc(history.present);
-    } catch {
-      return null;
-    }
-  }, [history.present]);
+  /** Решение Симулятора: сбой схемы — null, живое поведение просто гаснет.
+   * Схемы с источником ~ решаются суперпозицией (DC + фазор). */
+  const solution = useMemo<CircuitSolution | null>(
+    () => solveCircuit(history.present),
+    [history.present],
+  );
 
-  /** Живое поведение Холста: лампочка светится, моторчик вращается. */
+  /** Живое поведение Холста: лампочка светится, моторчик вращается; на
+   * переменном токе активность считается по действующим значениям. */
   const readings = useMemo(
-    () => (solution === null ? new Map<string, ComponentReading>() : readingsByComponent(solution)),
-    [solution],
+    () => (solution === null ? new Map<string, ComponentReading>() : effectiveReadings(history.present, solution)),
+    [solution, history.present],
   );
 
   return { solution, readings };
@@ -62,7 +57,7 @@ export interface MultimeterState {
  * Смена режима и выключение снимают щупы. Показание считается из живого
  * решения — обновляется с любым изменением схемы само собой.
  */
-export function useMultimeter(liveSolution: DcSolution | null): MultimeterState {
+export function useMultimeter(liveSolution: CircuitSolution | null): MultimeterState {
   const [on, setOn] = useState(false);
   const [mode, setMode] = useState<MultimeterMode>('voltage');
   const [probes, setProbes] = useState<MultimeterProbes>(emptyProbes);

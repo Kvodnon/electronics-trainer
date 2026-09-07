@@ -2,20 +2,36 @@
  * Мультиметр — режим измерений на Холсте (CONTEXT.md): щупы прикладываются
  * к двум точкам схемы (напряжение между ними) или к ветви Компонента (ток).
  * Измерения читают решение Симулятора (ADR-0001), поэтому обновляются при
- * любом изменении схемы сами собой — пересчётом решения. Чистый TypeScript
- * без DOM.
+ * любом изменении схемы сами собой — пересчётом решения. В схемах с
+ * источником ~ (тикет 20) к постоянной составляющей добавляются амплитуда,
+ * фаза и действующее (RMS) значение переменной. Чистый TypeScript без DOM.
  */
 import { pinKey, type PinRef } from './canvas';
-import { readingOf, type DcSolution } from './simulator';
+import { readingOf } from './simulator';
+import { cAbs, phaseDegOf, phasorReading, rmsOf, type CircuitSolution, type PhasorSolution } from './phasor';
 import type { QuantityUnit } from './quantity';
 
 /** Режим Мультиметра: напряжение между двумя щупами или ток ветви. */
 export type MultimeterMode = 'voltage' | 'current';
 
-/** Измерение Мультиметра: значение со знаком и единица. */
+/** Переменная составляющая измерения (тикет 20). */
+export interface AcMeasurement {
+  /** Амплитуда (пик) переменной составляющей. */
+  readonly amplitude: number;
+  /** Действующее значение полной величины: √(DC² + (A/√2)²). */
+  readonly rms: number;
+  /** Фаза переменной составляющей, градусы — относительно источника ~. */
+  readonly phaseDeg: number;
+  /** Частота, Гц. */
+  readonly frequency: number;
+}
+
+/** Измерение Мультиметра: значение со знаком (постоянная составляющая) и единица. */
 export interface MultimeterReading {
   readonly value: number;
   readonly unit: QuantityUnit;
+  /** Переменная составляющая; в схемах без источника ~ её нет. */
+  readonly ac?: AcMeasurement;
 }
 
 /** Приложенные щупы: две точки (напряжение) или ветвь Компонента (ток). */
@@ -34,19 +50,45 @@ export const emptyProbes: MultimeterProbes = { red: null, black: null, branch: n
  * щупов меняет знак. Щупы без общей цепи (разные острова Симулятора)
  * измерение не определяют — null. Обрыв цепи решение не ломает: разомкнутый
  * контакт — огромное сопротивление, поэтому на разрыве честно падает всё
- * напряжение источника, а ток ≈ 0.
+ * напряжение источника, а ток ≈ 0. В схеме с источником ~ постоянная
+ * составляющая дополняется амплитудой, фазой и RMS переменной.
  */
 export function measureVoltage(
-  solution: DcSolution,
+  solution: CircuitSolution,
   red: PinRef,
   black: PinRef,
 ): MultimeterReading | null {
-  const redNode = solution.pinNodes.get(pinKey(red.componentId, red.pin));
-  const blackNode = solution.pinNodes.get(pinKey(black.componentId, black.pin));
+  const redNode = solution.dc.pinNodes.get(pinKey(red.componentId, red.pin));
+  const blackNode = solution.dc.pinNodes.get(pinKey(black.componentId, black.pin));
   if (redNode === undefined || blackNode === undefined || redNode.island !== blackNode.island) {
     return null;
   }
-  return { value: redNode.voltage - blackNode.voltage, unit: 'В' };
+  const dc = redNode.voltage - blackNode.voltage;
+  const ac = voltageAcMeasurement(solution.phasor, red, black, dc);
+  return { value: dc, unit: 'В', ...(ac !== undefined ? { ac } : {}) };
+}
+
+/** Переменная составляющая напряжения между щупами; нет источников ~ — undefined. */
+function voltageAcMeasurement(
+  phasor: PhasorSolution | null,
+  red: PinRef,
+  black: PinRef,
+  dc: number,
+): AcMeasurement | undefined {
+  if (phasor === null) return undefined;
+  const redPhasor = phasor.pinPhasors.get(pinKey(red.componentId, red.pin));
+  const blackPhasor = phasor.pinPhasors.get(pinKey(black.componentId, black.pin));
+  if (redPhasor === undefined || blackPhasor === undefined) return undefined;
+  const phasorVoltage = {
+    re: redPhasor.voltage.re - blackPhasor.voltage.re,
+    im: redPhasor.voltage.im - blackPhasor.voltage.im,
+  };
+  return {
+    amplitude: cAbs(phasorVoltage),
+    rms: rmsOf(dc, cAbs(phasorVoltage)),
+    phaseDeg: phaseDegOf(phasorVoltage),
+    frequency: phasor.frequency,
+  };
 }
 
 /**
@@ -54,11 +96,25 @@ export function measureVoltage(
  * полярности, а знак ветвевого тока — артефакт ориентации Компонента на
  * Холсте (как в оверлее и условиях, ориентация не наказывается). Напряжение,
  * напротив, знаковое: порядок щупов выбирает ученик. Нет такого Компонента —
- * null.
+ * null. Амплитуда и фаза переменной составляющей берутся из фазорного решения.
  */
-export function measureCurrent(solution: DcSolution, componentId: string): MultimeterReading | null {
-  const reading = readingOf(solution, componentId);
-  return reading === null ? null : { value: Math.abs(reading.current), unit: 'А' };
+export function measureCurrent(solution: CircuitSolution, componentId: string): MultimeterReading | null {
+  const reading = readingOf(solution.dc, componentId);
+  if (reading === null) return null;
+  const dc = Math.abs(reading.current);
+  if (solution.phasor === null) return { value: dc, unit: 'А' };
+  const ac = phasorReading(solution.phasor, componentId);
+  const amplitude = ac === null ? 0 : cAbs(ac.current);
+  return {
+    value: dc,
+    unit: 'А',
+    ac: {
+      amplitude,
+      rms: rmsOf(dc, amplitude),
+      phaseDeg: ac === null ? 0 : phaseDegOf(ac.current),
+      frequency: solution.phasor.frequency,
+    },
+  };
 }
 
 /** Итог измерения: щупы не приложены; приложены, но измерить нельзя; значение. */
@@ -73,7 +129,7 @@ export type MultimeterResult =
  * случая честно «unavailable», не «idle».
  */
 export function measure(
-  solution: DcSolution | null,
+  solution: CircuitSolution | null,
   mode: MultimeterMode,
   probes: MultimeterProbes,
 ): MultimeterResult {

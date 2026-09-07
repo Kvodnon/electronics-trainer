@@ -27,6 +27,8 @@ export const COMPONENT_LEXIS: Record<ComponentKind, ComponentLexis> = {
   transistor: { nominative: 'транзистор', accusative: 'транзистор', prepositional: 'транзисторе', genitive: 'транзистора', genitivePlural: 'транзисторов' },
   potentiometer: { nominative: 'потенциометр', accusative: 'потенциометр', prepositional: 'потенциометре', genitive: 'потенциометра', genitivePlural: 'потенциометров' },
   buzzer: { nominative: 'зуммер', accusative: 'зуммер', prepositional: 'зуммере', genitive: 'зуммера', genitivePlural: 'зуммеров' },
+  acsource: { nominative: 'источник переменного напряжения', accusative: 'источник переменного напряжения', prepositional: 'источнике переменного напряжения', genitive: 'источника переменного напряжения', genitivePlural: 'источников переменного напряжения' },
+  inductor: { nominative: 'катушка', accusative: 'катушку', prepositional: 'катушке', genitive: 'катушки', genitivePlural: 'катушек' },
 };
 
 /** Родительный падеж цвета свечения — для строк Диагнозов («порог красного»). */
